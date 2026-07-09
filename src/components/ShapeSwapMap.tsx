@@ -206,32 +206,54 @@ export function ShapeSwapMap() {
       cancelLongPress();
     };
 
-    map.on("mousedown", (e) => {
+    const handlePressStart = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
       if (!overlayCenterRef.current || modeRef.current !== "locked") return;
-      const hits = map.queryRenderedFeatures(e.point, {
-        layers: ["overlay-fill"],
-      });
+      const hits = map.queryRenderedFeatures(point, { layers: ["overlay-fill"] });
       if (hits.length === 0) return;
-      pressStart = { x: e.point.x, y: e.point.y };
+      pressStart = { x: point.x, y: point.y };
       longPressTimerRef.current = setTimeout(() => {
         draggingRef.current = true;
         setIsDragging(true);
         map.dragPan.disable();
         map.getCanvas().style.cursor = "grabbing";
-        if (navigator.vibrate) navigator.vibrate(30);
+        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
       }, LONG_PRESS_MS);
-    });
+      void lngLat;
+    };
 
-    map.on("mousemove", (e) => {
+    const handlePressMove = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
       if (draggingRef.current) {
-        setOverlayCenter([e.lngLat.lng, e.lngLat.lat]);
+        setOverlayCenter([lngLat.lng, lngLat.lat]);
         return;
       }
       if (pressStart) {
-        const dx = e.point.x - pressStart.x;
-        const dy = e.point.y - pressStart.y;
+        const dx = point.x - pressStart.x;
+        const dy = point.y - pressStart.y;
         if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) cancelLongPress();
       }
+    };
+
+    map.on("mousedown", (e) => handlePressStart(e.point, e.lngLat));
+    map.on("mousemove", (e) => handlePressMove(e.point, e.lngLat));
+    map.on("touchstart", (e) => {
+      if (e.points.length !== 1) {
+        cancelLongPress();
+        return;
+      }
+      handlePressStart(e.point, e.lngLat);
+    });
+    map.on("touchmove", (e) => {
+      if (e.points.length !== 1) {
+        cancelLongPress();
+        return;
+      }
+      handlePressMove(e.point, e.lngLat);
     });
 
     map.on("mouseup", endDrag);
