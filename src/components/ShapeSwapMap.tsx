@@ -387,11 +387,8 @@ export function ShapeSwapMap() {
     if (!map || !map.isStyleLoaded()) return;
     const src = map.getSource("drawing") as maplibregl.GeoJSONSource | undefined;
     if (!src) return;
-    const features: GeoJSON.Feature[] = drawingPoints.map((p) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: p },
-      properties: {},
-    }));
+    const features: GeoJSON.Feature[] = [];
+
     if (drawingPoints.length >= 2) {
       features.push({
         type: "Feature",
