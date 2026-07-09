@@ -72,7 +72,9 @@ export function ShapeSwapMap() {
   const originalRingRef = useRef<LngLat[] | null>(null);
   const dragTargetRef = useRef<"overlay" | "original">("overlay");
   const draggingRef = useRef(false);
+  const freehandRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [isDragging, setIsDragging] = useState(false);
   useEffect(() => {
     const map = mapRef.current;
@@ -234,18 +236,12 @@ export function ShapeSwapMap() {
       } catch {}
     });
 
-    // Click handler for drawing
-    map.on("click", (e) => {
-      if (modeRef.current !== "drawing") return;
-      const pt: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      drawingRef.current = [...drawingRef.current, pt];
-      setDrawingPoints([...drawingRef.current]);
-    });
-
     // Long-press to drag the overlay polygon
     const LONG_PRESS_MS = 500;
     const MOVE_TOLERANCE = 8;
+    const FREEHAND_MIN_PX = 6;
     let pressStart: { x: number; y: number } | null = null;
+    let lastFreehandPx: { x: number; y: number } | null = null;
 
     const cancelLongPress = () => {
       if (longPressTimerRef.current) {
@@ -255,6 +251,21 @@ export function ShapeSwapMap() {
       pressStart = null;
     };
 
+    const finishFreehand = () => {
+      if (!freehandRef.current) return;
+      freehandRef.current = false;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+      lastFreehandPx = null;
+      const pts = drawingRef.current;
+      if (pts.length >= 3) {
+        setOriginalRing([...pts]);
+        setMode("locked");
+      }
+      drawingRef.current = [];
+      setDrawingPoints([]);
+    };
+
     const endDrag = () => {
       if (draggingRef.current) {
         draggingRef.current = false;
@@ -262,6 +273,7 @@ export function ShapeSwapMap() {
         map.dragPan.enable();
         map.getCanvas().style.cursor = "";
       }
+      finishFreehand();
       cancelLongPress();
     };
 
@@ -269,6 +281,16 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
+      if (modeRef.current === "drawing") {
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "crosshair";
+        freehandRef.current = true;
+        const pt: LngLat = [lngLat.lng, lngLat.lat];
+        drawingRef.current = [pt];
+        setDrawingPoints([pt]);
+        lastFreehandPx = { x: point.x, y: point.y };
+        return;
+      }
       if (modeRef.current !== "locked") return;
       const layers: string[] = [];
       if (overlayCenterRef.current) layers.push("overlay-fill");
@@ -279,7 +301,6 @@ export function ShapeSwapMap() {
         { layers },
       );
       if (hits.length === 0) return;
-      // Prefer overlay if both are hit
       const hitOverlay = hits.some((h) => h.layer.id === "overlay-fill");
       dragTargetRef.current = hitOverlay ? "overlay" : "original";
       pressStart = { x: point.x, y: point.y };
@@ -297,6 +318,18 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
+      if (freehandRef.current) {
+        if (lastFreehandPx) {
+          const dx = point.x - lastFreehandPx.x;
+          const dy = point.y - lastFreehandPx.y;
+          if (dx * dx + dy * dy < FREEHAND_MIN_PX * FREEHAND_MIN_PX) return;
+        }
+        lastFreehandPx = { x: point.x, y: point.y };
+        const pt: LngLat = [lngLat.lng, lngLat.lat];
+        drawingRef.current = [...drawingRef.current, pt];
+        setDrawingPoints([...drawingRef.current]);
+        return;
+      }
       if (draggingRef.current) {
         if (dragTargetRef.current === "overlay") {
           setOverlayCenter([lngLat.lng, lngLat.lat]);
@@ -339,6 +372,7 @@ export function ShapeSwapMap() {
     map.on("touchend", endDrag);
     map.on("touchcancel", endDrag);
 
+
     return () => {
       cancelLongPress();
       resizeObserver.disconnect();
@@ -353,11 +387,8 @@ export function ShapeSwapMap() {
     if (!map || !map.isStyleLoaded()) return;
     const src = map.getSource("drawing") as maplibregl.GeoJSONSource | undefined;
     if (!src) return;
-    const features: GeoJSON.Feature[] = drawingPoints.map((p) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: p },
-      properties: {},
-    }));
+    const features: GeoJSON.Feature[] = [];
+
     if (drawingPoints.length >= 2) {
       features.push({
         type: "Feature",
@@ -473,11 +504,8 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setMode("locked");
   }, []);
+  void finishDrawing;
 
-  const undoPoint = useCallback(() => {
-    drawingRef.current = drawingRef.current.slice(0, -1);
-    setDrawingPoints([...drawingRef.current]);
-  }, []);
 
   const clearAll = useCallback(() => {
     drawingRef.current = [];
@@ -633,32 +661,19 @@ export function ShapeSwapMap() {
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                Tap the map to add points ({drawingPoints.length} so far). Add at least 3.
+                Press and drag on the map to draw freehand. Release to finish.
               </p>
               <div className="flex gap-2">
-                <button
-                  onClick={undoPoint}
-                  disabled={drawingPoints.length === 0}
-                  className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm disabled:opacity-50"
-                >
-                  Undo
-                </button>
                 <button
                   onClick={clearAll}
                   className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={finishDrawing}
-                  disabled={drawingPoints.length < 3}
-                  className="flex-[1.4] rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm disabled:opacity-40"
-                >
-                  Finish
-                </button>
               </div>
             </div>
           )}
+
 
           {mode === "locked" && (
             <div className="flex flex-col gap-2">
