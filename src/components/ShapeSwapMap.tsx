@@ -55,6 +55,10 @@ export function ShapeSwapMap() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawingRef = useRef<LngLat[]>([]);
   const modeRef = useRef<Mode>("idle");
+  const overlayCenterRef = useRef<LngLat | null>(null);
+  const draggingRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const [mode, setMode] = useState<Mode>("idle");
   const [originalRing, setOriginalRing] = useState<LngLat[] | null>(null);
