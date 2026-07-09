@@ -1,0 +1,514 @@
+import { useEffect, useRef, useState, useCallback } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import * as turf from "@turf/turf";
+import { useServerFn } from "@tanstack/react-start";
+import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
+
+type LngLat = [number, number];
+type Mode = "idle" | "drawing" | "locked";
+
+const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const STORAGE_KEY = "shapeswap.polygon.v1";
+
+/** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
+function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
+  if (ring.length < 3) return ring;
+  const closed = ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+    ? ring
+    : [...ring, ring[0]];
+  const poly = turf.polygon([closed.map((p) => [p[0], p[1]])]);
+  const c = turf.centroid(poly).geometry.coordinates as LngLat;
+  return ring.map((pt) => {
+    const dist = turf.distance([c[0], c[1]], [pt[0], pt[1]], { units: "kilometers" });
+    const bearing = turf.bearing([c[0], c[1]], [pt[0], pt[1]]);
+    const moved = turf.destination(newCenter, dist, bearing, { units: "kilometers" });
+    return moved.geometry.coordinates as LngLat;
+  });
+}
+
+function ringArea(ring: LngLat[]): number {
+  if (ring.length < 3) return 0;
+  const closed =
+    ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+      ? ring
+      : [...ring, ring[0]];
+  try {
+    return turf.area(turf.polygon([closed]));
+  } catch {
+    return 0;
+  }
+}
+
+function formatArea(m2: number): string {
+  if (m2 <= 0) return "—";
+  const km2 = m2 / 1_000_000;
+  if (km2 >= 1) return `${km2.toFixed(2)} km²`;
+  const ha = m2 / 10_000;
+  if (ha >= 1) return `${ha.toFixed(2)} ha`;
+  return `${Math.round(m2)} m²`;
+}
+
+export function ShapeSwapMap() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const drawingRef = useRef<LngLat[]>([]);
+  const modeRef = useRef<Mode>("idle");
+
+  const [mode, setMode] = useState<Mode>("idle");
+  const [originalRing, setOriginalRing] = useState<LngLat[] | null>(null);
+  const [overlayCenter, setOverlayCenter] = useState<LngLat | null>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<GeocodeResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [drawingPoints, setDrawingPoints] = useState<LngLat[]>([]);
+
+  const search = useServerFn(searchPlaces);
+
+  // keep refs in sync
+  useEffect(() => {
+    modeRef.current = mode;
+  }, [mode]);
+
+  // Init map (client only)
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return;
+    const map = new maplibregl.Map({
+      container: containerRef.current,
+      style: MAP_STYLE,
+      center: [-0.0396, 51.5362], // Victoria Park, London
+      zoom: 13,
+      attributionControl: { compact: true },
+    });
+    mapRef.current = map;
+
+    map.on("load", () => {
+      // Original polygon layers
+      map.addSource("original", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "original-fill",
+        type: "fill",
+        source: "original",
+        paint: { "fill-color": "#22d3ee", "fill-opacity": 0.25 },
+      });
+      map.addLayer({
+        id: "original-line",
+        type: "line",
+        source: "original",
+        paint: { "line-color": "#06b6d4", "line-width": 3 },
+      });
+
+      // Drawing preview
+      map.addSource("drawing", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "drawing-line",
+        type: "line",
+        source: "drawing",
+        paint: { "line-color": "#22d3ee", "line-width": 2, "line-dasharray": [2, 2] },
+      });
+      map.addLayer({
+        id: "drawing-points",
+        type: "circle",
+        source: "drawing",
+        filter: ["==", "$type", "Point"],
+        paint: {
+          "circle-radius": 6,
+          "circle-color": "#0ea5e9",
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 2,
+        },
+      });
+
+      // Overlay polygon
+      map.addSource("overlay", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "overlay-fill",
+        type: "fill",
+        source: "overlay",
+        paint: { "fill-color": "#f472b6", "fill-opacity": 0.3 },
+      });
+      map.addLayer({
+        id: "overlay-line",
+        type: "line",
+        source: "overlay",
+        paint: {
+          "line-color": "#ec4899",
+          "line-width": 3,
+          "line-dasharray": [3, 2],
+        },
+      });
+
+      // restore saved polygon
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as LngLat[];
+          if (Array.isArray(parsed) && parsed.length >= 3) {
+            setOriginalRing(parsed);
+            setMode("locked");
+          }
+        }
+      } catch {}
+    });
+
+    // Click handler for drawing
+    map.on("click", (e) => {
+      if (modeRef.current !== "drawing") return;
+      const pt: LngLat = [e.lngLat.lng, e.lngLat.lat];
+      drawingRef.current = [...drawingRef.current, pt];
+      setDrawingPoints([...drawingRef.current]);
+    });
+
+    return () => {
+      map.remove();
+      mapRef.current = null;
+    };
+  }, []);
+
+  // Update drawing source
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    const src = map.getSource("drawing") as maplibregl.GeoJSONSource | undefined;
+    if (!src) return;
+    const features: GeoJSON.Feature[] = drawingPoints.map((p) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: p },
+      properties: {},
+    }));
+    if (drawingPoints.length >= 2) {
+      features.push({
+        type: "Feature",
+        geometry: {
+          type: "LineString",
+          coordinates:
+            drawingPoints.length >= 3
+              ? [...drawingPoints, drawingPoints[0]]
+              : drawingPoints,
+        },
+        properties: {},
+      });
+    }
+    src.setData({ type: "FeatureCollection", features });
+  }, [drawingPoints]);
+
+  // Update original polygon source
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const src = map.getSource("original") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      if (!originalRing || originalRing.length < 3) {
+        src.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+      const closed = [...originalRing, originalRing[0]];
+      src.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: { type: "Polygon", coordinates: [closed] },
+            properties: {},
+          },
+        ],
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [originalRing]);
+
+  // Update overlay polygon
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const src = map.getSource("overlay") as maplibregl.GeoJSONSource | undefined;
+      if (!src) return;
+      if (!originalRing || !overlayCenter) {
+        src.setData({ type: "FeatureCollection", features: [] });
+        return;
+      }
+      const moved = translatePolygon(originalRing, overlayCenter);
+      const closed = [...moved, moved[0]];
+      src.setData({
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: { type: "Polygon", coordinates: [closed] },
+            properties: {},
+          },
+        ],
+      });
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [originalRing, overlayCenter]);
+
+  // Persist original polygon
+  useEffect(() => {
+    if (originalRing && originalRing.length >= 3) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(originalRing));
+      } catch {}
+    }
+  }, [originalRing]);
+
+  // Search debounce
+  useEffect(() => {
+    if (!query.trim() || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const r = await search({ data: { q: query.trim() } });
+        setResults(r);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [query, search]);
+
+  const startDrawing = useCallback(() => {
+    drawingRef.current = [];
+    setDrawingPoints([]);
+    setOriginalRing(null);
+    setOverlayCenter(null);
+    setMode("drawing");
+  }, []);
+
+  const finishDrawing = useCallback(() => {
+    if (drawingRef.current.length < 3) return;
+    setOriginalRing([...drawingRef.current]);
+    drawingRef.current = [];
+    setDrawingPoints([]);
+    setMode("locked");
+  }, []);
+
+  const undoPoint = useCallback(() => {
+    drawingRef.current = drawingRef.current.slice(0, -1);
+    setDrawingPoints([...drawingRef.current]);
+  }, []);
+
+  const clearAll = useCallback(() => {
+    drawingRef.current = [];
+    setDrawingPoints([]);
+    setOriginalRing(null);
+    setOverlayCenter(null);
+    setMode("idle");
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, []);
+
+  const pickResult = useCallback(
+    (r: GeocodeResult) => {
+      const map = mapRef.current;
+      if (!map) return;
+      setQuery(r.label.split(",")[0]);
+      setShowResults(false);
+      if (mode === "locked" && originalRing) {
+        setOverlayCenter([r.lon, r.lat]);
+        map.flyTo({ center: [r.lon, r.lat], zoom: 13, essential: true });
+      } else {
+        map.flyTo({ center: [r.lon, r.lat], zoom: 13, essential: true });
+      }
+    },
+    [mode, originalRing],
+  );
+
+  const area = originalRing ? formatArea(ringArea(originalRing)) : "—";
+
+  return (
+    <div className="fixed inset-0 flex flex-col bg-background">
+      <div ref={containerRef} className="absolute inset-0" />
+
+      {/* Top: search */}
+      <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <div className="rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10">
+          <div className="flex items-center gap-2 px-3 py-2">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground shrink-0">
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3-3" />
+            </svg>
+            <input
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowResults(true);
+              }}
+              onFocus={() => setShowResults(true)}
+              placeholder={
+                mode === "locked"
+                  ? "Search a place to overlay your shape…"
+                  : "Search any address or place…"
+              }
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              inputMode="search"
+              autoComplete="off"
+            />
+            {query && (
+              <button
+                onClick={() => {
+                  setQuery("");
+                  setResults([]);
+                }}
+                className="text-muted-foreground text-xs px-2"
+                aria-label="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+          {showResults && (results.length > 0 || searching) && (
+            <div className="border-t border-black/5 max-h-72 overflow-y-auto">
+              {searching && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
+              )}
+              {results.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => pickResult(r)}
+                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-accent border-t border-black/5 first:border-t-0"
+                >
+                  <div className="line-clamp-2">{r.label}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Legend chip */}
+      {(originalRing || overlayCenter) && (
+        <div className="relative z-10 mx-3 -mt-1 flex flex-wrap gap-2">
+          {originalRing && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
+              <span className="h-2.5 w-2.5 rounded-sm bg-cyan-500" />
+              Original · {area}
+            </span>
+          )}
+          {overlayCenter && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
+              <span className="h-2.5 w-2.5 rounded-sm bg-pink-500" />
+              Overlay
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Bottom sheet */}
+      <div className="mt-auto relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        <div className="rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3">
+          {mode === "idle" && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground px-1">
+                Draw a shape around any area to get started.
+              </p>
+              <button
+                onClick={startDrawing}
+                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-medium py-3 text-sm transition"
+              >
+                Draw a shape
+              </button>
+            </div>
+          )}
+
+          {mode === "drawing" && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground px-1">
+                Tap the map to add points ({drawingPoints.length} so far). Add at least 3.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={undoPoint}
+                  disabled={drawingPoints.length === 0}
+                  className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm disabled:opacity-50"
+                >
+                  Undo
+                </button>
+                <button
+                  onClick={clearAll}
+                  className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={finishDrawing}
+                  disabled={drawingPoints.length < 3}
+                  className="flex-[1.4] rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm disabled:opacity-40"
+                >
+                  Finish
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mode === "locked" && (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-muted-foreground px-1">
+                {overlayCenter
+                  ? "Search another place to move the overlay, or start over."
+                  : "Now search a place above to overlay your shape there."}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const map = mapRef.current;
+                    if (map && originalRing) {
+                      const closed = [...originalRing, originalRing[0]];
+                      const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+                      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 60, duration: 800 });
+                    }
+                  }}
+                  className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
+                >
+                  View original
+                </button>
+                {overlayCenter && (
+                  <button
+                    onClick={() => {
+                      const map = mapRef.current;
+                      if (map && originalRing && overlayCenter) {
+                        const moved = translatePolygon(originalRing, overlayCenter);
+                        const closed = [...moved, moved[0]];
+                        const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+                        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 60, duration: 800 });
+                      }
+                    }}
+                    className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
+                  >
+                    View overlay
+                  </button>
+                )}
+                <button
+                  onClick={clearAll}
+                  className="flex-1 rounded-xl bg-destructive/90 hover:bg-destructive text-white font-medium py-3 text-sm"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
