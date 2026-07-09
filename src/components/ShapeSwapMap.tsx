@@ -8,7 +8,8 @@ import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
 type LngLat = [number, number];
 type Mode = "idle" | "drawing" | "locked";
 
-const MAP_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const MAPTILER_KEY = "PHdof98UIhcQKfX6LgHd";
+const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STORAGE_KEY = "shapeswap.polygon.v1";
 
 /** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
