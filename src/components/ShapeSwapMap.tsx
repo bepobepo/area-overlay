@@ -91,6 +91,39 @@ export function ShapeSwapMap() {
   const [drawingPoints, setDrawingPoints] = useState<LngLat[]>([]);
 
   const search = useServerFn(searchPlaces);
+  const genShape = useServerFn(generateShape);
+
+  // AI dialog state
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const runAiGenerate = useCallback(async () => {
+    const map = mapRef.current;
+    const desc = aiDescription.trim();
+    if (!map || !desc) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const shape = await genShape({ data: { description: desc } });
+      const c = map.getCenter();
+      const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
+      setOriginalRing(ring);
+      setOverlayCenter(null);
+      setMode("locked");
+      setAiOpen(false);
+      setAiDescription("");
+      // fit bounds
+      const closed = [...ring, ring[0]];
+      const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 80, duration: 800 });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiDescription, genShape]);
 
   // keep refs in sync
   useEffect(() => {
