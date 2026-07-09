@@ -667,32 +667,19 @@ export function ShapeSwapMap() {
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                Tap the map to add points ({drawingPoints.length} so far). Add at least 3.
+                Press and drag on the map to draw freehand. Release to finish.
               </p>
               <div className="flex gap-2">
-                <button
-                  onClick={undoPoint}
-                  disabled={drawingPoints.length === 0}
-                  className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm disabled:opacity-50"
-                >
-                  Undo
-                </button>
                 <button
                   onClick={clearAll}
                   className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={finishDrawing}
-                  disabled={drawingPoints.length < 3}
-                  className="flex-[1.4] rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm disabled:opacity-40"
-                >
-                  Finish
-                </button>
               </div>
             </div>
           )}
+
 
           {mode === "locked" && (
             <div className="flex flex-col gap-2">
