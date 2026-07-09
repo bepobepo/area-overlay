@@ -75,6 +75,9 @@ export function ShapeSwapMap() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+  useEffect(() => {
+    overlayCenterRef.current = overlayCenter;
+  }, [overlayCenter]);
 
   // Init map (client only)
   useEffect(() => {
