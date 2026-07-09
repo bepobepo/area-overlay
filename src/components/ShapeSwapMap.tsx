@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
+import { generateShape } from "@/lib/ai-shape.functions";
 
 type LngLat = [number, number];
 type Mode = "idle" | "drawing" | "locked";
@@ -24,6 +25,18 @@ function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
     const dist = turf.distance([c[0], c[1]], [pt[0], pt[1]], { units: "kilometers" });
     const bearing = turf.bearing([c[0], c[1]], [pt[0], pt[1]]);
     const moved = turf.destination(newCenter, dist, bearing, { units: "kilometers" });
+    return moved.geometry.coordinates as LngLat;
+  });
+}
+
+/** Convert polygon points in meters (centroid at 0,0) to lng/lat around center. */
+function metersPolygonToLngLat(points: Array<{ x: number; y: number }>, center: LngLat): LngLat[] {
+  return points.map((p) => {
+    const distM = Math.sqrt(p.x * p.x + p.y * p.y);
+    // bearing: 0 = north, 90 = east. x=east, y=north.
+    const bearing = (Math.atan2(p.x, p.y) * 180) / Math.PI;
+    if (distM === 0) return center;
+    const moved = turf.destination(center, distM / 1000, bearing, { units: "kilometers" });
     return moved.geometry.coordinates as LngLat;
   });
 }
