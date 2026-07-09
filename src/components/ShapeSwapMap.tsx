@@ -55,6 +55,18 @@ export function ShapeSwapMap() {
   const mapRef = useRef<maplibregl.Map | null>(null);
   const drawingRef = useRef<LngLat[]>([]);
   const modeRef = useRef<Mode>("idle");
+  const overlayCenterRef = useRef<LngLat | null>(null);
+  const draggingRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    try {
+      map.setPaintProperty("overlay-fill", "fill-opacity", isDragging ? 0.5 : 0.3);
+      map.setPaintProperty("overlay-line", "line-width", isDragging ? 4 : 3);
+    } catch {}
+  }, [isDragging]);
 
   const [mode, setMode] = useState<Mode>("idle");
   const [originalRing, setOriginalRing] = useState<LngLat[] | null>(null);
@@ -71,6 +83,9 @@ export function ShapeSwapMap() {
   useEffect(() => {
     modeRef.current = mode;
   }, [mode]);
+  useEffect(() => {
+    overlayCenterRef.current = overlayCenter;
+  }, [overlayCenter]);
 
   // Init map (client only)
   useEffect(() => {
@@ -176,7 +191,85 @@ export function ShapeSwapMap() {
       setDrawingPoints([...drawingRef.current]);
     });
 
+    // Long-press to drag the overlay polygon
+    const LONG_PRESS_MS = 500;
+    const MOVE_TOLERANCE = 8;
+    let pressStart: { x: number; y: number } | null = null;
+
+    const cancelLongPress = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      pressStart = null;
+    };
+
+    const endDrag = () => {
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        setIsDragging(false);
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = "";
+      }
+      cancelLongPress();
+    };
+
+    const handlePressStart = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
+      if (!overlayCenterRef.current || modeRef.current !== "locked") return;
+      const hits = map.queryRenderedFeatures([point.x, point.y] as unknown as maplibregl.PointLike, { layers: ["overlay-fill"] });
+      if (hits.length === 0) return;
+      pressStart = { x: point.x, y: point.y };
+      longPressTimerRef.current = setTimeout(() => {
+        draggingRef.current = true;
+        setIsDragging(true);
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "grabbing";
+        if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
+      }, LONG_PRESS_MS);
+      void lngLat;
+    };
+
+    const handlePressMove = (
+      point: { x: number; y: number },
+      lngLat: { lng: number; lat: number },
+    ) => {
+      if (draggingRef.current) {
+        setOverlayCenter([lngLat.lng, lngLat.lat]);
+        return;
+      }
+      if (pressStart) {
+        const dx = point.x - pressStart.x;
+        const dy = point.y - pressStart.y;
+        if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) cancelLongPress();
+      }
+    };
+
+    map.on("mousedown", (e) => handlePressStart(e.point, e.lngLat));
+    map.on("mousemove", (e) => handlePressMove(e.point, e.lngLat));
+    map.on("touchstart", (e) => {
+      if (e.points.length !== 1) {
+        cancelLongPress();
+        return;
+      }
+      handlePressStart(e.point, e.lngLat);
+    });
+    map.on("touchmove", (e) => {
+      if (e.points.length !== 1) {
+        cancelLongPress();
+        return;
+      }
+      handlePressMove(e.point, e.lngLat);
+    });
+
+    map.on("mouseup", endDrag);
+    map.on("touchend", endDrag);
+    map.on("touchcancel", endDrag);
+
     return () => {
+      cancelLongPress();
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
@@ -478,7 +571,7 @@ export function ShapeSwapMap() {
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
                 {overlayCenter
-                  ? "Search another place to move the overlay, or start over."
+                  ? "Long-press the pink shape to drag it, or search a new place."
                   : "Now search a place above to overlay your shape there."}
               </p>
               <div className="flex gap-2">
