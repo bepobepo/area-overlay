@@ -459,7 +459,18 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setOriginalRing(null);
     setOverlayCenter(null);
+    setQuery("");
+    setResults([]);
     setMode("idle");
+    // Force-clear map sources immediately (don't rely on effect timing)
+    const map = mapRef.current;
+    if (map) {
+      const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
+      for (const id of ["original", "overlay", "drawing"] as const) {
+        const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
+        if (src) src.setData(empty);
+      }
+    }
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {}
