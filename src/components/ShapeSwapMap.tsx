@@ -134,6 +134,9 @@ export function ShapeSwapMap() {
   useEffect(() => {
     overlayCenterRef.current = overlayCenter;
   }, [overlayCenter]);
+  useEffect(() => {
+    originalRingRef.current = originalRing;
+  }, [originalRing]);
 
   // Init map (client only)
   useEffect(() => {
