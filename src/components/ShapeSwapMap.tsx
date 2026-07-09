@@ -75,14 +75,20 @@ export function ShapeSwapMap() {
   // Init map (client only)
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    const container = containerRef.current;
     const map = new maplibregl.Map({
-      container: containerRef.current,
+      container,
       style: MAP_STYLE,
       center: [-0.0396, 51.5362], // Victoria Park, London
       zoom: 13,
       attributionControl: { compact: true },
     });
     mapRef.current = map;
+
+    const resizeMap = () => map.resize();
+    requestAnimationFrame(resizeMap);
+    const resizeObserver = new ResizeObserver(resizeMap);
+    resizeObserver.observe(container);
 
     map.on("load", () => {
       // Original polygon layers
@@ -171,6 +177,7 @@ export function ShapeSwapMap() {
     });
 
     return () => {
+      resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
     };
@@ -339,7 +346,12 @@ export function ShapeSwapMap() {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-background">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div
+        ref={containerRef}
+        data-map-container
+        className="absolute inset-0"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      />
 
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
