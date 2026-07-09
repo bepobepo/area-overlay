@@ -563,7 +563,7 @@ export function ShapeSwapMap() {
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
                 {overlayCenter
-                  ? "Search another place to move the overlay, or start over."
+                  ? "Long-press the pink shape to drag it, or search a new place."
                   : "Now search a place above to overlay your shape there."}
               </p>
               <div className="flex gap-2">
