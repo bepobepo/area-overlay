@@ -574,12 +574,23 @@ export function ShapeSwapMap() {
               <p className="text-xs text-muted-foreground px-1">
                 Draw a shape around any area to get started.
               </p>
-              <button
-                onClick={startDrawing}
-                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-medium py-3 text-sm transition"
-              >
-                Draw a shape
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={startDrawing}
+                  className="flex-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-medium py-3 text-sm transition"
+                >
+                  Draw on map
+                </button>
+                <button
+                  onClick={() => {
+                    setAiError(null);
+                    setAiOpen(true);
+                  }}
+                  className="flex-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 active:bg-fuchsia-800 text-white font-medium py-3 text-sm transition inline-flex items-center justify-center gap-1.5"
+                >
+                  <span aria-hidden>✨</span> Draw with AI
+                </button>
+              </div>
             </div>
           )}
 
