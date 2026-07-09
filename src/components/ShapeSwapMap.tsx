@@ -236,18 +236,12 @@ export function ShapeSwapMap() {
       } catch {}
     });
 
-    // Click handler for drawing
-    map.on("click", (e) => {
-      if (modeRef.current !== "drawing") return;
-      const pt: LngLat = [e.lngLat.lng, e.lngLat.lat];
-      drawingRef.current = [...drawingRef.current, pt];
-      setDrawingPoints([...drawingRef.current]);
-    });
-
     // Long-press to drag the overlay polygon
     const LONG_PRESS_MS = 500;
     const MOVE_TOLERANCE = 8;
+    const FREEHAND_MIN_PX = 6;
     let pressStart: { x: number; y: number } | null = null;
+    let lastFreehandPx: { x: number; y: number } | null = null;
 
     const cancelLongPress = () => {
       if (longPressTimerRef.current) {
@@ -257,6 +251,21 @@ export function ShapeSwapMap() {
       pressStart = null;
     };
 
+    const finishFreehand = () => {
+      if (!freehandRef.current) return;
+      freehandRef.current = false;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+      lastFreehandPx = null;
+      const pts = drawingRef.current;
+      if (pts.length >= 3) {
+        setOriginalRing([...pts]);
+        setMode("locked");
+      }
+      drawingRef.current = [];
+      setDrawingPoints([]);
+    };
+
     const endDrag = () => {
       if (draggingRef.current) {
         draggingRef.current = false;
@@ -264,6 +273,7 @@ export function ShapeSwapMap() {
         map.dragPan.enable();
         map.getCanvas().style.cursor = "";
       }
+      finishFreehand();
       cancelLongPress();
     };
 
@@ -271,6 +281,16 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
+      if (modeRef.current === "drawing") {
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "crosshair";
+        freehandRef.current = true;
+        const pt: LngLat = [lngLat.lng, lngLat.lat];
+        drawingRef.current = [pt];
+        setDrawingPoints([pt]);
+        lastFreehandPx = { x: point.x, y: point.y };
+        return;
+      }
       if (modeRef.current !== "locked") return;
       const layers: string[] = [];
       if (overlayCenterRef.current) layers.push("overlay-fill");
@@ -281,7 +301,6 @@ export function ShapeSwapMap() {
         { layers },
       );
       if (hits.length === 0) return;
-      // Prefer overlay if both are hit
       const hitOverlay = hits.some((h) => h.layer.id === "overlay-fill");
       dragTargetRef.current = hitOverlay ? "overlay" : "original";
       pressStart = { x: point.x, y: point.y };
@@ -299,6 +318,18 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
+      if (freehandRef.current) {
+        if (lastFreehandPx) {
+          const dx = point.x - lastFreehandPx.x;
+          const dy = point.y - lastFreehandPx.y;
+          if (dx * dx + dy * dy < FREEHAND_MIN_PX * FREEHAND_MIN_PX) return;
+        }
+        lastFreehandPx = { x: point.x, y: point.y };
+        const pt: LngLat = [lngLat.lng, lngLat.lat];
+        drawingRef.current = [...drawingRef.current, pt];
+        setDrawingPoints([...drawingRef.current]);
+        return;
+      }
       if (draggingRef.current) {
         if (dragTargetRef.current === "overlay") {
           setOverlayCenter([lngLat.lng, lngLat.lat]);
@@ -340,6 +371,7 @@ export function ShapeSwapMap() {
     map.on("mouseup", endDrag);
     map.on("touchend", endDrag);
     map.on("touchcancel", endDrag);
+
 
     return () => {
       cancelLongPress();
