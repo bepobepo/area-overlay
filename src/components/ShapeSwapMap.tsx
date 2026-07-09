@@ -72,7 +72,9 @@ export function ShapeSwapMap() {
   const originalRingRef = useRef<LngLat[] | null>(null);
   const dragTargetRef = useRef<"overlay" | "original">("overlay");
   const draggingRef = useRef(false);
+  const freehandRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [isDragging, setIsDragging] = useState(false);
   useEffect(() => {
     const map = mapRef.current;
