@@ -69,6 +69,8 @@ export function ShapeSwapMap() {
   const drawingRef = useRef<LngLat[]>([]);
   const modeRef = useRef<Mode>("idle");
   const overlayCenterRef = useRef<LngLat | null>(null);
+  const originalRingRef = useRef<LngLat[] | null>(null);
+  const dragTargetRef = useRef<"overlay" | "original">("overlay");
   const draggingRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -132,6 +134,9 @@ export function ShapeSwapMap() {
   useEffect(() => {
     overlayCenterRef.current = overlayCenter;
   }, [overlayCenter]);
+  useEffect(() => {
+    originalRingRef.current = originalRing;
+  }, [originalRing]);
 
   // Init map (client only)
   useEffect(() => {
@@ -264,9 +269,19 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
-      if (!overlayCenterRef.current || modeRef.current !== "locked") return;
-      const hits = map.queryRenderedFeatures([point.x, point.y] as unknown as maplibregl.PointLike, { layers: ["overlay-fill"] });
+      if (modeRef.current !== "locked") return;
+      const layers: string[] = [];
+      if (overlayCenterRef.current) layers.push("overlay-fill");
+      if (originalRingRef.current) layers.push("original-fill");
+      if (layers.length === 0) return;
+      const hits = map.queryRenderedFeatures(
+        [point.x, point.y] as unknown as maplibregl.PointLike,
+        { layers },
+      );
       if (hits.length === 0) return;
+      // Prefer overlay if both are hit
+      const hitOverlay = hits.some((h) => h.layer.id === "overlay-fill");
+      dragTargetRef.current = hitOverlay ? "overlay" : "original";
       pressStart = { x: point.x, y: point.y };
       longPressTimerRef.current = setTimeout(() => {
         draggingRef.current = true;
@@ -283,7 +298,16 @@ export function ShapeSwapMap() {
       lngLat: { lng: number; lat: number },
     ) => {
       if (draggingRef.current) {
-        setOverlayCenter([lngLat.lng, lngLat.lat]);
+        if (dragTargetRef.current === "overlay") {
+          setOverlayCenter([lngLat.lng, lngLat.lat]);
+        } else {
+          const ring = originalRingRef.current;
+          if (ring && ring.length >= 3) {
+            const moved = translatePolygon(ring, [lngLat.lng, lngLat.lat]);
+            originalRingRef.current = moved;
+            setOriginalRing(moved);
+          }
+        }
         return;
       }
       if (pressStart) {
@@ -292,6 +316,7 @@ export function ShapeSwapMap() {
         if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) cancelLongPress();
       }
     };
+
 
     map.on("mousedown", (e) => handlePressStart(e.point, e.lngLat));
     map.on("mousemove", (e) => handlePressMove(e.point, e.lngLat));
@@ -639,7 +664,7 @@ export function ShapeSwapMap() {
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
                 {overlayCenter
-                  ? "Long-press the pink shape to drag it, or search a new place."
+                  ? "Long-press any shape to drag it, or search a new place."
                   : "Now search a place above to overlay your shape there."}
               </p>
               <div className="flex gap-2">
