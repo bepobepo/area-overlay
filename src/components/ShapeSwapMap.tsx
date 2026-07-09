@@ -110,7 +110,7 @@ export function ShapeSwapMap() {
       const c = map.getCenter();
       const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
       setOriginalRing(ring);
-      setOverlayCenter(null);
+      setOverlayCenter([c.lng, c.lat]);
       setMode("locked");
       setAiOpen(false);
       setAiDescription("");
