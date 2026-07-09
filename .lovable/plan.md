@@ -1,48 +1,49 @@
-# Polygon Compare — Map Overlay App
+# Draw with AI
 
-A mobile-first web app for drawing a shape around one area (e.g. Victoria Park, London) and dropping that exact shape as an overlay on another location (e.g. an area of Tel Aviv) to compare size and footprint.
+## UI changes (`src/components/ShapeSwapMap.tsx`)
 
-## Core user flow
+In the `idle` bottom sheet:
+- Rename existing button "Draw a shape" → **"Draw on map"**.
+- Add a second button **"Draw with AI"** (secondary style) next to / below it.
 
-1. Open app → full-screen map centered on user's location (or a default city).
-2. Tap "Draw" → tap points on the map to build a polygon; tap "Finish" to close it.
-3. See area stats (km² / acres) and a chip showing the polygon is "locked".
-4. Tap the search bar → type an address / place name → autocomplete suggestions.
-5. Pick a result → map flies to that location and the SAME polygon (preserving real-world size, in meters) is rendered centered on the new spot.
-6. Drag the overlay to fine-tune position; optionally rotate. Toggle between "original" and "overlay" view, or show both side-by-side on one map.
-7. Clear / redraw / share link with encoded polygon + target location.
+Clicking "Draw with AI" opens a modal dialog (simple overlay, no new shadcn dep needed) with:
+- Textarea: "Describe an area or object (e.g. 5 shipping containers, a football pitch, a Boeing 747)".
+- Buttons: Cancel · Generate.
+- Loading state while the AI call runs; error message on failure.
 
-## Screens (single route, mobile-first)
+On success:
+- The returned polygon is placed centered on the current map view center.
+- App transitions to `locked` mode with `originalRing` set (same flow as finishing a manual drawing), so the user can then search a location to overlay it elsewhere.
+- Map fits bounds to the new shape.
 
-- `/` — Map screen with bottom sheet controls (Draw, Search, Compare, Clear, Stats).
-- `/about` — Short explainer + credits.
+## AI server function (`src/lib/ai-shape.functions.ts`, new)
 
-## Key design commitments
+`generateShape` — `createServerFn({ method: "POST" })`:
+- Input (zod): `{ description: string }`.
+- Uses Lovable AI Gateway via the shared helper (`src/lib/ai-gateway.server.ts`, create if missing) with `openai/gpt-5.5` and `structuredOutputs: true`.
+- Prompt instructs the model to:
+  1. Estimate the real-world footprint of the described thing in meters (length × width, or approximate area/shape).
+  2. Return a simple polygon as an array of `[x, y]` points **in meters, relative to (0,0) centroid** — so we can place it anywhere on the map.
+  3. Include a short `label` and estimated `area_m2` for display/debug.
+- Schema (kept small/flat, no bounds; enforce counts in prompt + clamp in code):
+  ```
+  { label: string, area_m2: number, points_m: Array<{ x: number, y: number }> }
+  ```
+- Wrapped in the `NoObjectGeneratedError` guard from the gateway skill; falls back to parsing `error.text`.
 
-- Full-bleed map, floating translucent controls, bottom sheet for actions (thumb-reachable).
-- Distinct visual identity — not a generic Google-Maps clone. Dark map style, one strong accent color for the polygon, contrasting accent for the overlay.
-- Clear affordances for the two polygons: original (solid outline, filled) vs. overlay (dashed outline, different hue).
+## Client-side conversion
 
-## Technical approach
+New helper in `ShapeSwapMap.tsx` (or `src/lib/geo.ts`):
+- `metersPolygonToLngLat(points_m, center: LngLat): LngLat[]` — uses `turf.destination` with each point's bearing/distance from origin to produce real lng/lat coords around `center`.
+- Center = current `map.getCenter()` at the moment "Generate" is clicked.
 
-- **Map + drawing**: MapLibre GL JS (open source, mobile-friendly, works with free tile providers) + `@mapbox/mapbox-gl-draw` compatible fork or a lightweight custom tap-to-add-vertex drawer. Rationale: no API key needed for basic tiles (MapTiler/OpenFreeMap), avoids Google Maps Platform cost/setup for a first version.
-- **Geocoding / address search**: MapTiler Geocoding or Nominatim (OpenStreetMap) via a TanStack server function to keep any key server-side. Debounced autocomplete.
-- **Geometry math**: `@turf/turf` for area calculation, centroid, translating a polygon to a new center while preserving real-world dimensions (compute offset per-vertex in meters using destination bearings from the new centroid).
-- **State**: local React state + URL search params (encoded polygon + target) so results are shareable. No backend/database needed for v1.
-- **Persistence**: `localStorage` for the last-drawn polygon (read in `useEffect` to avoid SSR hydration issues).
-- **Stack**: TanStack Start (existing), Tailwind v4, shadcn components for the bottom sheet, buttons, and command palette style search.
+Result is passed into the existing `setOriginalRing(...)` + `setMode("locked")` flow, so persistence, area readout, overlay dragging, and search-to-overlay all keep working unchanged.
 
-## Out of scope for v1
+## Cloud / secrets
 
-- Accounts, saving multiple polygons to a database.
-- Rotating overlay by arbitrary angle (can add later; v1 supports drag-to-move only).
-- 3D / satellite toggle.
-- Native mobile app.
+Requires Lovable Cloud enabled for `LOVABLE_API_KEY`. If not yet enabled, I'll enable it as part of the implementation and mention it to the user.
 
-## Open decisions to confirm before build
+## Out of scope
 
-1. **Map tiles provider**: MapMaker/MapTiler (needs a free API key from user) vs. OpenFreeMap (no key, less polished styles). Default recommendation: MapTiler for quality; I'll ask for the key when we get there.
-2. **Geocoding provider**: MapTiler (same key) vs. Nominatim (no key, rate-limited, attribution required). Default: same as tiles provider.
-3. **Comparison view**: overlay both polygons on one map at the new location (recommended, simpler on mobile) vs. split-screen two maps. Default: single map overlay.
-
-I'll ask these as a follow-up question after you approve the overall direction, or you can answer now.
+- No changes to drawing, dragging, search, or persistence behavior.
+- No new UI library; dialog is a lightweight inline overlay matching the existing bottom-sheet style.
