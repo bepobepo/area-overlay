@@ -211,7 +211,7 @@ export function ShapeSwapMap() {
       lngLat: { lng: number; lat: number },
     ) => {
       if (!overlayCenterRef.current || modeRef.current !== "locked") return;
-      const hits = map.queryRenderedFeatures(point, { layers: ["overlay-fill"] });
+      const hits = map.queryRenderedFeatures([point.x, point.y] as unknown as maplibregl.PointLike, { layers: ["overlay-fill"] });
       if (hits.length === 0) return;
       pressStart = { x: point.x, y: point.y };
       longPressTimerRef.current = setTimeout(() => {
