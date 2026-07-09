@@ -183,7 +183,63 @@ export function ShapeSwapMap() {
       setDrawingPoints([...drawingRef.current]);
     });
 
+    // Long-press to drag the overlay polygon
+    const LONG_PRESS_MS = 500;
+    const MOVE_TOLERANCE = 8;
+    let pressStart: { x: number; y: number } | null = null;
+
+    const cancelLongPress = () => {
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+      pressStart = null;
+    };
+
+    const endDrag = () => {
+      if (draggingRef.current) {
+        draggingRef.current = false;
+        setIsDragging(false);
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = "";
+      }
+      cancelLongPress();
+    };
+
+    map.on("mousedown", (e) => {
+      if (!overlayCenterRef.current || modeRef.current !== "locked") return;
+      const hits = map.queryRenderedFeatures(e.point, {
+        layers: ["overlay-fill"],
+      });
+      if (hits.length === 0) return;
+      pressStart = { x: e.point.x, y: e.point.y };
+      longPressTimerRef.current = setTimeout(() => {
+        draggingRef.current = true;
+        setIsDragging(true);
+        map.dragPan.disable();
+        map.getCanvas().style.cursor = "grabbing";
+        if (navigator.vibrate) navigator.vibrate(30);
+      }, LONG_PRESS_MS);
+    });
+
+    map.on("mousemove", (e) => {
+      if (draggingRef.current) {
+        setOverlayCenter([e.lngLat.lng, e.lngLat.lat]);
+        return;
+      }
+      if (pressStart) {
+        const dx = e.point.x - pressStart.x;
+        const dy = e.point.y - pressStart.y;
+        if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) cancelLongPress();
+      }
+    });
+
+    map.on("mouseup", endDrag);
+    map.on("touchend", endDrag);
+    map.on("touchcancel", endDrag);
+
     return () => {
+      cancelLongPress();
       resizeObserver.disconnect();
       map.remove();
       mapRef.current = null;
