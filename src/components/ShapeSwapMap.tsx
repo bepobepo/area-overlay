@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
+import { generateShape } from "@/lib/ai-shape.functions";
 
 type LngLat = [number, number];
 type Mode = "idle" | "drawing" | "locked";
@@ -24,6 +25,18 @@ function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
     const dist = turf.distance([c[0], c[1]], [pt[0], pt[1]], { units: "kilometers" });
     const bearing = turf.bearing([c[0], c[1]], [pt[0], pt[1]]);
     const moved = turf.destination(newCenter, dist, bearing, { units: "kilometers" });
+    return moved.geometry.coordinates as LngLat;
+  });
+}
+
+/** Convert polygon points in meters (centroid at 0,0) to lng/lat around center. */
+function metersPolygonToLngLat(points: Array<{ x: number; y: number }>, center: LngLat): LngLat[] {
+  return points.map((p) => {
+    const distM = Math.sqrt(p.x * p.x + p.y * p.y);
+    // bearing: 0 = north, 90 = east. x=east, y=north.
+    const bearing = (Math.atan2(p.x, p.y) * 180) / Math.PI;
+    if (distM === 0) return center;
+    const moved = turf.destination(center, distM / 1000, bearing, { units: "kilometers" });
     return moved.geometry.coordinates as LngLat;
   });
 }
@@ -78,6 +91,39 @@ export function ShapeSwapMap() {
   const [drawingPoints, setDrawingPoints] = useState<LngLat[]>([]);
 
   const search = useServerFn(searchPlaces);
+  const genShape = useServerFn(generateShape);
+
+  // AI dialog state
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiDescription, setAiDescription] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const runAiGenerate = useCallback(async () => {
+    const map = mapRef.current;
+    const desc = aiDescription.trim();
+    if (!map || !desc) return;
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const shape = await genShape({ data: { description: desc } });
+      const c = map.getCenter();
+      const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
+      setOriginalRing(ring);
+      setOverlayCenter(null);
+      setMode("locked");
+      setAiOpen(false);
+      setAiDescription("");
+      // fit bounds
+      const closed = [...ring, ring[0]];
+      const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 80, duration: 800 });
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "Something went wrong");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [aiDescription, genShape]);
 
   // keep refs in sync
   useEffect(() => {
@@ -528,12 +574,23 @@ export function ShapeSwapMap() {
               <p className="text-xs text-muted-foreground px-1">
                 Draw a shape around any area to get started.
               </p>
-              <button
-                onClick={startDrawing}
-                className="w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-medium py-3 text-sm transition"
-              >
-                Draw a shape
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={startDrawing}
+                  className="flex-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 text-white font-medium py-3 text-sm transition"
+                >
+                  Draw on map
+                </button>
+                <button
+                  onClick={() => {
+                    setAiError(null);
+                    setAiOpen(true);
+                  }}
+                  className="flex-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 active:bg-fuchsia-800 text-white font-medium py-3 text-sm transition inline-flex items-center justify-center gap-1.5"
+                >
+                  <span aria-hidden>✨</span> Draw with AI
+                </button>
+              </div>
             </div>
           )}
 
@@ -615,6 +672,73 @@ export function ShapeSwapMap() {
           )}
         </div>
       </div>
+
+      {aiOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-3">
+          <div className="w-full max-w-md rounded-2xl bg-background shadow-2xl ring-1 ring-black/10 p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Draw with AI</h2>
+              <button
+                onClick={() => !aiLoading && setAiOpen(false)}
+                className="text-muted-foreground text-lg leading-none px-2"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Describe an area or object and AI will estimate its real-world size and draw it on the map.
+            </p>
+            <textarea
+              value={aiDescription}
+              onChange={(e) => setAiDescription(e.target.value)}
+              disabled={aiLoading}
+              rows={3}
+              placeholder="e.g. 5 shipping containers, a football pitch, a Boeing 747"
+              className="w-full rounded-xl border border-black/10 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500/50 resize-none"
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {["5 shipping containers", "A football pitch", "A Boeing 747", "An Olympic swimming pool"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setAiDescription(s)}
+                  disabled={aiLoading}
+                  className="text-xs px-2 py-1 rounded-full bg-secondary text-secondary-foreground hover:bg-accent disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            {aiError && (
+              <p className="text-xs text-destructive">{aiError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setAiOpen(false)}
+                disabled={aiLoading}
+                className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runAiGenerate}
+                disabled={aiLoading || !aiDescription.trim()}
+                className="flex-[1.4] rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-medium py-3 text-sm disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              >
+                {aiLoading ? (
+                  <>
+                    <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>✨ Generate</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
