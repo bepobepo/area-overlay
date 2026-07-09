@@ -672,6 +672,73 @@ export function ShapeSwapMap() {
           )}
         </div>
       </div>
+
+      {aiOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-3">
+          <div className="w-full max-w-md rounded-2xl bg-background shadow-2xl ring-1 ring-black/10 p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Draw with AI</h2>
+              <button
+                onClick={() => !aiLoading && setAiOpen(false)}
+                className="text-muted-foreground text-lg leading-none px-2"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Describe an area or object and AI will estimate its real-world size and draw it on the map.
+            </p>
+            <textarea
+              value={aiDescription}
+              onChange={(e) => setAiDescription(e.target.value)}
+              disabled={aiLoading}
+              rows={3}
+              placeholder="e.g. 5 shipping containers, a football pitch, a Boeing 747"
+              className="w-full rounded-xl border border-black/10 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500/50 resize-none"
+              autoFocus
+            />
+            <div className="flex flex-wrap gap-1.5">
+              {["5 shipping containers", "A football pitch", "A Boeing 747", "An Olympic swimming pool"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setAiDescription(s)}
+                  disabled={aiLoading}
+                  className="text-xs px-2 py-1 rounded-full bg-secondary text-secondary-foreground hover:bg-accent disabled:opacity-50"
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            {aiError && (
+              <p className="text-xs text-destructive">{aiError}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setAiOpen(false)}
+                disabled={aiLoading}
+                className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={runAiGenerate}
+                disabled={aiLoading || !aiDescription.trim()}
+                className="flex-[1.4] rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-medium py-3 text-sm disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              >
+                {aiLoading ? (
+                  <>
+                    <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    Generating…
+                  </>
+                ) : (
+                  <>✨ Generate</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
