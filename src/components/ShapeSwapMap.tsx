@@ -59,6 +59,14 @@ export function ShapeSwapMap() {
   const draggingRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+    try {
+      map.setPaintProperty("overlay-fill", "fill-opacity", isDragging ? 0.5 : 0.3);
+      map.setPaintProperty("overlay-line", "line-width", isDragging ? 4 : 3);
+    } catch {}
+  }, [isDragging]);
 
   const [mode, setMode] = useState<Mode>("idle");
   const [originalRing, setOriginalRing] = useState<LngLat[] | null>(null);
