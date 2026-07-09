@@ -507,11 +507,8 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setMode("locked");
   }, []);
+  void finishDrawing;
 
-  const undoPoint = useCallback(() => {
-    drawingRef.current = drawingRef.current.slice(0, -1);
-    setDrawingPoints([...drawingRef.current]);
-  }, []);
 
   const clearAll = useCallback(() => {
     drawingRef.current = [];
