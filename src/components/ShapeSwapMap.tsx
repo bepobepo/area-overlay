@@ -644,7 +644,24 @@ export function ShapeSwapMap() {
             </div>
           )}
         </div>
+        {mode === "locked" && onboardingStep === "search" && !overlayCenter && (
+          <div className="mt-2 flex flex-col items-center">
+            <div className="h-2 w-2 rotate-45 bg-cyan-600 -mb-1" />
+            <div className="max-w-[22rem] rounded-xl bg-cyan-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
+              <span aria-hidden>🔍</span>
+              <span>Now let's compare the selected area to another on the map.</span>
+              <button
+                onClick={() => persistOnboarding("done")}
+                className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
+                aria-label="Dismiss tip"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+
 
       {/* Legend chip */}
       {(originalRing || overlayCenter) && (
