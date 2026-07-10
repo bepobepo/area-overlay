@@ -211,9 +211,17 @@ export function ShapeSwapMap() {
         data: { type: "FeatureCollection", features: [] },
       });
       map.addLayer({
+        id: "drawing-fill",
+        type: "fill",
+        source: "drawing",
+        filter: ["==", "$type", "Polygon"],
+        paint: { "fill-color": "#22d3ee", "fill-opacity": 0.2 },
+      });
+      map.addLayer({
         id: "drawing-line",
         type: "line",
         source: "drawing",
+        filter: ["==", "$type", "LineString"],
         paint: { "line-color": "#22d3ee", "line-width": 2, "line-dasharray": [2, 2] },
       });
       map.addLayer({
@@ -228,6 +236,7 @@ export function ShapeSwapMap() {
           "circle-stroke-width": 2,
         },
       });
+
 
       // Overlay polygon
       map.addSource("overlay", {
@@ -283,16 +292,13 @@ export function ShapeSwapMap() {
       if (!freehandRef.current) return;
       freehandRef.current = false;
       map.dragPan.enable();
-      map.getCanvas().style.cursor = "";
+      // stay in drawing mode — keep the crosshair cursor so the user knows
+      // they can redraw. Locking happens when the user hits "Ready".
+      map.getCanvas().style.cursor = modeRef.current === "drawing" ? "crosshair" : "";
       lastFreehandPx = null;
-      const pts = drawingRef.current;
-      if (pts.length >= 3) {
-        setOriginalRing([...pts]);
-        setMode("locked");
-      }
-      drawingRef.current = [];
-      setDrawingPoints([]);
+      setDrawingPoints([...drawingRef.current]);
     };
+
 
     const endDrag = () => {
       if (draggingRef.current) {
@@ -409,6 +415,17 @@ export function ShapeSwapMap() {
     };
   }, []);
 
+  // Reflect drawing mode on the map cursor
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const canvas = map.getCanvas();
+    canvas.style.cursor = mode === "drawing" ? "crosshair" : "";
+    return () => {
+      canvas.style.cursor = "";
+    };
+  }, [mode]);
+
   // Update drawing source
   useEffect(() => {
     const map = mapRef.current;
@@ -417,21 +434,23 @@ export function ShapeSwapMap() {
     if (!src) return;
     const features: GeoJSON.Feature[] = [];
 
-    if (drawingPoints.length >= 2) {
+    if (drawingPoints.length >= 3) {
+      const closed = [...drawingPoints, drawingPoints[0]];
       features.push({
         type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates:
-            drawingPoints.length >= 3
-              ? [...drawingPoints, drawingPoints[0]]
-              : drawingPoints,
-        },
+        geometry: { type: "Polygon", coordinates: [closed] },
+        properties: {},
+      });
+    } else if (drawingPoints.length === 2) {
+      features.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: drawingPoints },
         properties: {},
       });
     }
     src.setData({ type: "FeatureCollection", features });
   }, [drawingPoints]);
+
 
   // Update original polygon source
   useEffect(() => {
@@ -532,7 +551,7 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setMode("locked");
   }, []);
-  void finishDrawing;
+
 
 
   const clearAll = useCallback(() => {
@@ -730,7 +749,9 @@ export function ShapeSwapMap() {
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                Press and drag on the map to draw freehand. Release to finish.
+                {drawingPoints.length >= 3
+                  ? "Looks good? Tap Ready — or draw again to redo."
+                  : "Press and drag on the map to trace a shape freehand."}
               </p>
               <div className="flex gap-2">
                 <button
@@ -739,9 +760,17 @@ export function ShapeSwapMap() {
                 >
                   Cancel
                 </button>
+                <button
+                  onClick={finishDrawing}
+                  disabled={drawingPoints.length < 3}
+                  className="flex-[1.4] rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 text-sm transition"
+                >
+                  Ready
+                </button>
               </div>
             </div>
           )}
+
 
 
           {mode === "locked" && (
