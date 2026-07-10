@@ -211,9 +211,17 @@ export function ShapeSwapMap() {
         data: { type: "FeatureCollection", features: [] },
       });
       map.addLayer({
+        id: "drawing-fill",
+        type: "fill",
+        source: "drawing",
+        filter: ["==", "$type", "Polygon"],
+        paint: { "fill-color": "#22d3ee", "fill-opacity": 0.2 },
+      });
+      map.addLayer({
         id: "drawing-line",
         type: "line",
         source: "drawing",
+        filter: ["==", "$type", "LineString"],
         paint: { "line-color": "#22d3ee", "line-width": 2, "line-dasharray": [2, 2] },
       });
       map.addLayer({
@@ -228,6 +236,7 @@ export function ShapeSwapMap() {
           "circle-stroke-width": 2,
         },
       });
+
 
       // Overlay polygon
       map.addSource("overlay", {
