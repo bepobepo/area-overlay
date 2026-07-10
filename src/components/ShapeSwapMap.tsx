@@ -586,13 +586,10 @@ export function ShapeSwapMap() {
 
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div
-          className={`rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10 ${
-            mode === "locked" && onboardingStep === "search" && !overlayCenter
-              ? "ring-2 ring-cyan-400 shadow-[0_0_0_6px_rgba(34,211,238,0.25)] animate-pulse"
-              : ""
-          }`}
-        >
+        <div className="relative rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10">
+          {mode === "locked" && !searchTipDismissed && !overlayCenter && (
+            <span aria-hidden className="highlight-frame-cyan" />
+          )}
           <div className="flex items-center gap-2 px-3 py-2">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground shrink-0">
               <circle cx="11" cy="11" r="7" />
@@ -644,14 +641,14 @@ export function ShapeSwapMap() {
             </div>
           )}
         </div>
-        {mode === "locked" && onboardingStep === "search" && !overlayCenter && (
+        {mode === "locked" && !searchTipDismissed && !overlayCenter && (
           <div className="mt-2 flex flex-col items-center">
             <div className="h-2 w-2 rotate-45 bg-cyan-600 -mb-1" />
             <div className="max-w-[22rem] rounded-xl bg-cyan-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
               <span aria-hidden>🔍</span>
-              <span>Now let's compare the selected area to another on the map.</span>
+              <span>Now search for a place on the map to compare it to.</span>
               <button
-                onClick={() => persistOnboarding("done")}
+                onClick={dismissSearchTip}
                 className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
                 aria-label="Dismiss tip"
               >
@@ -661,6 +658,7 @@ export function ShapeSwapMap() {
           </div>
         )}
       </div>
+
 
 
       {/* Legend chip */}
