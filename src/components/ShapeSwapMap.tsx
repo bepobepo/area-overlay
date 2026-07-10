@@ -415,6 +415,17 @@ export function ShapeSwapMap() {
     };
   }, []);
 
+  // Reflect drawing mode on the map cursor
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const canvas = map.getCanvas();
+    canvas.style.cursor = mode === "drawing" ? "crosshair" : "";
+    return () => {
+      canvas.style.cursor = "";
+    };
+  }, [mode]);
+
   // Update drawing source
   useEffect(() => {
     const map = mapRef.current;
@@ -423,21 +434,23 @@ export function ShapeSwapMap() {
     if (!src) return;
     const features: GeoJSON.Feature[] = [];
 
-    if (drawingPoints.length >= 2) {
+    if (drawingPoints.length >= 3) {
+      const closed = [...drawingPoints, drawingPoints[0]];
       features.push({
         type: "Feature",
-        geometry: {
-          type: "LineString",
-          coordinates:
-            drawingPoints.length >= 3
-              ? [...drawingPoints, drawingPoints[0]]
-              : drawingPoints,
-        },
+        geometry: { type: "Polygon", coordinates: [closed] },
+        properties: {},
+      });
+    } else if (drawingPoints.length === 2) {
+      features.push({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: drawingPoints },
         properties: {},
       });
     }
     src.setData({ type: "FeatureCollection", features });
   }, [drawingPoints]);
+
 
   // Update original polygon source
   useEffect(() => {
