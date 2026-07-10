@@ -105,6 +105,29 @@ export function ShapeSwapMap() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Onboarding
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("done");
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ONBOARDING_KEY) as OnboardingStep | null;
+      setOnboardingStep(saved === "search" ? "search" : saved === "done" ? "done" : "buttons");
+    } catch {
+      setOnboardingStep("buttons");
+    }
+  }, []);
+  const persistOnboarding = useCallback((step: OnboardingStep) => {
+    setOnboardingStep(step);
+    try {
+      localStorage.setItem(ONBOARDING_KEY, step);
+    } catch {}
+  }, []);
+  // Advance from "buttons" → "search" the first time the user reaches locked mode
+  useEffect(() => {
+    if (mode === "locked" && onboardingStep === "buttons") {
+      persistOnboarding("search");
+    }
+  }, [mode, onboardingStep, persistOnboarding]);
+
   const runAiGenerate = useCallback(async () => {
     const map = mapRef.current;
     const desc = aiDescription.trim();
