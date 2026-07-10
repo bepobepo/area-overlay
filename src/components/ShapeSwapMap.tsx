@@ -105,31 +105,31 @@ export function ShapeSwapMap() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Onboarding
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("done");
+  // Onboarding — two independent dismissal flags
+  const [buttonsTipDismissed, setButtonsTipDismissed] = useState(true);
+  const [searchTipDismissed, setSearchTipDismissed] = useState(true);
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(ONBOARDING_KEY) as OnboardingStep | null;
-      setOnboardingStep(saved === "search" ? "search" : saved === "done" ? "done" : "buttons");
-    } catch {
-      setOnboardingStep("buttons");
-    }
-  }, []);
-  const persistOnboarding = useCallback((step: OnboardingStep) => {
-    setOnboardingStep(step);
-    try {
-      localStorage.setItem(ONBOARDING_KEY, step);
+      setButtonsTipDismissed(localStorage.getItem(ONBOARDING_BUTTONS_KEY) === "1");
+      setSearchTipDismissed(localStorage.getItem(ONBOARDING_SEARCH_KEY) === "1");
     } catch {}
   }, []);
-  // Advance from "buttons" → "search" the first time the user reaches locked mode
+  const dismissButtonsTip = useCallback(() => {
+    setButtonsTipDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_BUTTONS_KEY, "1");
+    } catch {}
+  }, []);
+  const dismissSearchTip = useCallback(() => {
+    setSearchTipDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_SEARCH_KEY, "1");
+    } catch {}
+  }, []);
+  // Auto-dismiss the search tip once an overlay is placed
   useEffect(() => {
-    if (mode === "locked" && onboardingStep === "buttons") {
-      persistOnboarding("search");
-    }
-    if (overlayCenter && onboardingStep === "search") {
-      persistOnboarding("done");
-    }
-  }, [mode, overlayCenter, onboardingStep, persistOnboarding]);
+    if (overlayCenter && !searchTipDismissed) dismissSearchTip();
+  }, [overlayCenter, searchTipDismissed, dismissSearchTip]);
 
   const runAiGenerate = useCallback(async () => {
     const map = mapRef.current;
