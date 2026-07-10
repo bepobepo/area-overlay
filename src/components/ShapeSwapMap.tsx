@@ -292,16 +292,13 @@ export function ShapeSwapMap() {
       if (!freehandRef.current) return;
       freehandRef.current = false;
       map.dragPan.enable();
-      map.getCanvas().style.cursor = "";
+      // stay in drawing mode — keep the crosshair cursor so the user knows
+      // they can redraw. Locking happens when the user hits "Ready".
+      map.getCanvas().style.cursor = modeRef.current === "drawing" ? "crosshair" : "";
       lastFreehandPx = null;
-      const pts = drawingRef.current;
-      if (pts.length >= 3) {
-        setOriginalRing([...pts]);
-        setMode("locked");
-      }
-      drawingRef.current = [];
-      setDrawingPoints([]);
+      setDrawingPoints([...drawingRef.current]);
     };
+
 
     const endDrag = () => {
       if (draggingRef.current) {
