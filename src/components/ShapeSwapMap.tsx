@@ -551,7 +551,7 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setMode("locked");
   }, []);
-  void finishDrawing;
+
 
 
   const clearAll = useCallback(() => {
