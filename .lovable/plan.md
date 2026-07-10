@@ -1,49 +1,35 @@
-# Draw with AI
+## Fixes to the onboarding guide
 
-## UI changes (`src/components/ShapeSwapMap.tsx`)
+**1. Clearer wording on step 2**
+- Change the search-bar tip from "Now let's compare the selected area to another on the map." to **"Now search for a place on the map to compare it to."**
 
-In the `idle` bottom sheet:
-- Rename existing button "Draw a shape" → **"Draw on map"**.
-- Add a second button **"Draw with AI"** (secondary style) next to / below it.
+**2. "Got it" on step 1 must not skip step 2**
+- Current bug: both tips share a single `onboardingStep` state, and "Got it" on the buttons tip jumps straight to `"done"`, so the search-bar tip never shows.
+- Fix: track dismissal per step. Replace the single `onboardingStep` with two independent flags persisted in localStorage:
+  - `shapeswap.onboarding.buttonsDismissed`
+  - `shapeswap.onboarding.searchDismissed`
+- Show the buttons tip when `!buttonsDismissed && mode === "idle"`.
+- Show the search tip when `!searchDismissed && mode === "locked" && !overlayCenter`.
+- "Got it" on each tip only sets its own flag. Picking a search result also auto-dismisses the search tip.
 
-Clicking "Draw with AI" opens a modal dialog (simple overlay, no new shadcn dep needed) with:
-- Textarea: "Describe an area or object (e.g. 5 shipping containers, a football pitch, a Boeing 747)".
-- Buttons: Cancel · Generate.
-- Loading state while the AI call runs; error message on failure.
-
-On success:
-- The returned polygon is placed centered on the current map view center.
-- App transitions to `locked` mode with `originalRing` set (same flow as finishing a manual drawing), so the user can then search a location to overlay it elsewhere.
-- Map fits bounds to the new shape.
-
-## AI server function (`src/lib/ai-shape.functions.ts`, new)
-
-`generateShape` — `createServerFn({ method: "POST" })`:
-- Input (zod): `{ description: string }`.
-- Uses Lovable AI Gateway via the shared helper (`src/lib/ai-gateway.server.ts`, create if missing) with `openai/gpt-5.5` and `structuredOutputs: true`.
-- Prompt instructs the model to:
-  1. Estimate the real-world footprint of the described thing in meters (length × width, or approximate area/shape).
-  2. Return a simple polygon as an array of `[x, y]` points **in meters, relative to (0,0) centroid** — so we can place it anywhere on the map.
-  3. Include a short `label` and estimated `area_m2` for display/debug.
-- Schema (kept small/flat, no bounds; enforce counts in prompt + clamp in code):
+**3. Brighter, actually blinking frame (not the whole card fading)**
+- Remove `animate-pulse` from the card/search containers (it fades the whole element's opacity — that's what looked "slow and unclear").
+- Add a dedicated blinking outline ring rendered as an absolutely-positioned sibling `<span>` inside each highlighted container, so only the frame animates and the content stays fully opaque.
+- Define a new keyframe in `src/styles.css`:
+  ```css
+  @keyframes highlight-blink {
+    0%, 100% { box-shadow: 0 0 0 2px hsl(var(--ring-color)), 0 0 16px 4px hsl(var(--ring-color) / 0.6); opacity: 1; }
+    50%      { box-shadow: 0 0 0 3px hsl(var(--ring-color)), 0 0 28px 8px hsl(var(--ring-color) / 0.9); opacity: 1; }
+  }
+  .animate-highlight-blink { animation: highlight-blink 1s ease-in-out infinite; }
   ```
-  { label: string, area_m2: number, points_m: Array<{ x: number, y: number }> }
-  ```
-- Wrapped in the `NoObjectGeneratedError` guard from the gateway skill; falls back to parsing `error.text`.
+- Apply it to:
+  - The bottom-sheet buttons container — bright fuchsia frame while step 1 is active.
+  - The top search-bar container — bright cyan frame while step 2 is active.
+- The frame overlay uses `pointer-events-none` and `rounded-2xl` matching the container so clicks still work and the ring hugs the corners.
 
-## Client-side conversion
+**4. Files touched**
+- `src/components/ShapeSwapMap.tsx` — state split, tip text, frame overlay markup.
+- `src/styles.css` — new `highlight-blink` keyframe + utility class.
 
-New helper in `ShapeSwapMap.tsx` (or `src/lib/geo.ts`):
-- `metersPolygonToLngLat(points_m, center: LngLat): LngLat[]` — uses `turf.destination` with each point's bearing/distance from origin to produce real lng/lat coords around `center`.
-- Center = current `map.getCenter()` at the moment "Generate" is clicked.
-
-Result is passed into the existing `setOriginalRing(...)` + `setMode("locked")` flow, so persistence, area readout, overlay dragging, and search-to-overlay all keep working unchanged.
-
-## Cloud / secrets
-
-Requires Lovable Cloud enabled for `LOVABLE_API_KEY`. If not yet enabled, I'll enable it as part of the implementation and mention it to the user.
-
-## Out of scope
-
-- No changes to drawing, dragging, search, or persistence behavior.
-- No new UI library; dialog is a lightweight inline overlay matching the existing bottom-sheet style.
+No changes to drawing, AI, search, or persistence logic.
