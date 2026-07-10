@@ -660,7 +660,29 @@ export function ShapeSwapMap() {
 
       {/* Bottom sheet */}
       <div className="mt-auto relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3">
+        <div
+          className={`relative rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3 ${
+            mode === "idle" && onboardingStep === "buttons"
+              ? "ring-2 ring-fuchsia-400 shadow-[0_0_0_6px_rgba(232,121,249,0.25)] animate-pulse"
+              : ""
+          }`}
+        >
+          {mode === "idle" && onboardingStep === "buttons" && (
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center pointer-events-none">
+              <div className="pointer-events-auto max-w-[18rem] rounded-xl bg-fuchsia-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
+                <span aria-hidden>👋</span>
+                <span>Start by drawing a shape or letting AI do it for you.</span>
+                <button
+                  onClick={() => persistOnboarding("done")}
+                  className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
+                  aria-label="Dismiss tip"
+                >
+                  Got it
+                </button>
+              </div>
+              <div className="h-2 w-2 rotate-45 bg-fuchsia-600 -mt-1" />
+            </div>
+          )}
           {mode === "idle" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
@@ -685,6 +707,7 @@ export function ShapeSwapMap() {
               </div>
             </div>
           )}
+
 
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
