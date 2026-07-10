@@ -12,8 +12,8 @@ type Mode = "idle" | "drawing" | "locked";
 const MAPTILER_KEY = "PHdof98UIhcQKfX6LgHd";
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STORAGE_KEY = "shapeswap.polygon.v1";
-const ONBOARDING_KEY = "shapeswap.onboarding.v1";
-type OnboardingStep = "buttons" | "search" | "done";
+const ONBOARDING_BUTTONS_KEY = "shapeswap.onboarding.buttonsDismissed.v1";
+const ONBOARDING_SEARCH_KEY = "shapeswap.onboarding.searchDismissed.v1";
 
 /** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
 function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
