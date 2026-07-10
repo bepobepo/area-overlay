@@ -749,7 +749,9 @@ export function ShapeSwapMap() {
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                Press and drag on the map to draw freehand. Release to finish.
+                {drawingPoints.length >= 3
+                  ? "Looks good? Tap Ready — or draw again to redo."
+                  : "Press and drag on the map to trace a shape freehand."}
               </p>
               <div className="flex gap-2">
                 <button
@@ -758,9 +760,17 @@ export function ShapeSwapMap() {
                 >
                   Cancel
                 </button>
+                <button
+                  onClick={finishDrawing}
+                  disabled={drawingPoints.length < 3}
+                  className="flex-[1.4] rounded-xl bg-cyan-600 hover:bg-cyan-700 active:bg-cyan-800 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium py-3 text-sm transition"
+                >
+                  Ready
+                </button>
               </div>
             </div>
           )}
+
 
 
           {mode === "locked" && (
