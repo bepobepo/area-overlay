@@ -12,8 +12,8 @@ type Mode = "idle" | "drawing" | "locked";
 const MAPTILER_KEY = "PHdof98UIhcQKfX6LgHd";
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STORAGE_KEY = "shapeswap.polygon.v1";
-const ONBOARDING_KEY = "shapeswap.onboarding.v1";
-type OnboardingStep = "buttons" | "search" | "done";
+const ONBOARDING_BUTTONS_KEY = "shapeswap.onboarding.buttonsDismissed.v1";
+const ONBOARDING_SEARCH_KEY = "shapeswap.onboarding.searchDismissed.v1";
 
 /** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
 function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
@@ -105,31 +105,31 @@ export function ShapeSwapMap() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Onboarding
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("done");
+  // Onboarding — two independent dismissal flags
+  const [buttonsTipDismissed, setButtonsTipDismissed] = useState(true);
+  const [searchTipDismissed, setSearchTipDismissed] = useState(true);
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(ONBOARDING_KEY) as OnboardingStep | null;
-      setOnboardingStep(saved === "search" ? "search" : saved === "done" ? "done" : "buttons");
-    } catch {
-      setOnboardingStep("buttons");
-    }
-  }, []);
-  const persistOnboarding = useCallback((step: OnboardingStep) => {
-    setOnboardingStep(step);
-    try {
-      localStorage.setItem(ONBOARDING_KEY, step);
+      setButtonsTipDismissed(localStorage.getItem(ONBOARDING_BUTTONS_KEY) === "1");
+      setSearchTipDismissed(localStorage.getItem(ONBOARDING_SEARCH_KEY) === "1");
     } catch {}
   }, []);
-  // Advance from "buttons" → "search" the first time the user reaches locked mode
+  const dismissButtonsTip = useCallback(() => {
+    setButtonsTipDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_BUTTONS_KEY, "1");
+    } catch {}
+  }, []);
+  const dismissSearchTip = useCallback(() => {
+    setSearchTipDismissed(true);
+    try {
+      localStorage.setItem(ONBOARDING_SEARCH_KEY, "1");
+    } catch {}
+  }, []);
+  // Auto-dismiss the search tip once an overlay is placed
   useEffect(() => {
-    if (mode === "locked" && onboardingStep === "buttons") {
-      persistOnboarding("search");
-    }
-    if (overlayCenter && onboardingStep === "search") {
-      persistOnboarding("done");
-    }
-  }, [mode, overlayCenter, onboardingStep, persistOnboarding]);
+    if (overlayCenter && !searchTipDismissed) dismissSearchTip();
+  }, [overlayCenter, searchTipDismissed, dismissSearchTip]);
 
   const runAiGenerate = useCallback(async () => {
     const map = mapRef.current;
@@ -586,13 +586,10 @@ export function ShapeSwapMap() {
 
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <div
-          className={`rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10 ${
-            mode === "locked" && onboardingStep === "search" && !overlayCenter
-              ? "ring-2 ring-cyan-400 shadow-[0_0_0_6px_rgba(34,211,238,0.25)] animate-pulse"
-              : ""
-          }`}
-        >
+        <div className="relative rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10">
+          {mode === "locked" && !searchTipDismissed && !overlayCenter && (
+            <span aria-hidden className="highlight-frame-cyan" />
+          )}
           <div className="flex items-center gap-2 px-3 py-2">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground shrink-0">
               <circle cx="11" cy="11" r="7" />
@@ -644,14 +641,14 @@ export function ShapeSwapMap() {
             </div>
           )}
         </div>
-        {mode === "locked" && onboardingStep === "search" && !overlayCenter && (
+        {mode === "locked" && !searchTipDismissed && !overlayCenter && (
           <div className="mt-2 flex flex-col items-center">
             <div className="h-2 w-2 rotate-45 bg-cyan-600 -mb-1" />
             <div className="max-w-[22rem] rounded-xl bg-cyan-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
               <span aria-hidden>🔍</span>
-              <span>Now let's compare the selected area to another on the map.</span>
+              <span>Now search for a place on the map to compare it to.</span>
               <button
-                onClick={() => persistOnboarding("done")}
+                onClick={dismissSearchTip}
                 className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
                 aria-label="Dismiss tip"
               >
@@ -661,6 +658,7 @@ export function ShapeSwapMap() {
           </div>
         )}
       </div>
+
 
 
       {/* Legend chip */}
@@ -683,20 +681,17 @@ export function ShapeSwapMap() {
 
       {/* Bottom sheet */}
       <div className="mt-auto relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div
-          className={`relative rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3 ${
-            mode === "idle" && onboardingStep === "buttons"
-              ? "ring-2 ring-fuchsia-400 shadow-[0_0_0_6px_rgba(232,121,249,0.25)] animate-pulse"
-              : ""
-          }`}
-        >
-          {mode === "idle" && onboardingStep === "buttons" && (
+        <div className="relative rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3">
+          {mode === "idle" && !buttonsTipDismissed && (
+            <span aria-hidden className="highlight-frame-fuchsia" />
+          )}
+          {mode === "idle" && !buttonsTipDismissed && (
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center pointer-events-none">
               <div className="pointer-events-auto max-w-[18rem] rounded-xl bg-fuchsia-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
                 <span aria-hidden>👋</span>
                 <span>Start by drawing a shape or letting AI do it for you.</span>
                 <button
-                  onClick={() => persistOnboarding("done")}
+                  onClick={dismissButtonsTip}
                   className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
                   aria-label="Dismiss tip"
                 >

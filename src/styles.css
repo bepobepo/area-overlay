@@ -142,3 +142,38 @@
     color: var(--color-foreground);
   }
 }
+
+@keyframes highlight-blink-fuchsia {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgb(232 121 249), 0 0 14px 3px rgb(232 121 249 / 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(240 171 252), 0 0 28px 8px rgb(232 121 249 / 0.95);
+  }
+}
+
+@keyframes highlight-blink-cyan {
+  0%, 100% {
+    box-shadow: 0 0 0 2px rgb(34 211 238), 0 0 14px 3px rgb(34 211 238 / 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgb(103 232 249), 0 0 28px 8px rgb(34 211 238 / 0.95);
+  }
+}
+
+@utility highlight-frame-fuchsia {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: highlight-blink-fuchsia 0.9s ease-in-out infinite;
+}
+
+@utility highlight-frame-cyan {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: highlight-blink-cyan 0.9s ease-in-out infinite;
+}
+
