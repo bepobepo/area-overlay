@@ -126,7 +126,10 @@ export function ShapeSwapMap() {
     if (mode === "locked" && onboardingStep === "buttons") {
       persistOnboarding("search");
     }
-  }, [mode, onboardingStep, persistOnboarding]);
+    if (overlayCenter && onboardingStep === "search") {
+      persistOnboarding("done");
+    }
+  }, [mode, overlayCenter, onboardingStep, persistOnboarding]);
 
   const runAiGenerate = useCallback(async () => {
     const map = mapRef.current;
