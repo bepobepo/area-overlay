@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "sdk_version": "0.26.1",
+  "path": "/mcp",
+  "auth": {
+    "type": "none"
+  },
+  "mcp": {
+    "server": {
+      "name": "area-overlay",
+      "version": "0.1.0",
+      "title": "Area Overlay"
+    },
+    "tools": [
+      {
+        "name": "search_place",
+        "title": "Search place",
+        "description": "Look up a place, address, park or neighbourhood by name and return matching locations with latitude/longitude.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "minLength": 2,
+              "description": "Place name or address, e.g. 'Victoria Park, London'."
+            }
+          },
+          "required": [
+            "query"
+          ]
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "generate_area_shape",
+        "title": "Generate area shape",
+        "description": "Estimate the real-world footprint of a described thing (e.g. '5 shipping containers', 'a football pitch') and return it as a polygon in meters, centered on (0,0).",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "What to size up, e.g. '5 shipping containers' or 'an olympic swimming pool'."
+            }
+          },
+          "required": [
+            "description"
+          ]
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
