@@ -50,6 +50,66 @@ function metersPolygonToLngLat(points: Array<{ x: number; y: number }>, center: 
   });
 }
 
+/** Centroid of a ring. */
+function ringCentroid(ring: LngLat[]): LngLat {
+  const closed =
+    ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1]
+      ? ring
+      : [...ring, ring[0]];
+  return turf.centroid(turf.polygon([closed])).geometry.coordinates as LngLat;
+}
+
+/** Rotate a ring by `deg` clockwise around a pivot, preserving real-world size. */
+function rotateRing(ring: LngLat[], deg: number, pivot: LngLat): LngLat[] {
+  if (!deg || ring.length < 3) return ring;
+  return ring.map((pt) => {
+    const dist = turf.distance(pivot, pt, { units: "kilometers" });
+    if (dist === 0) return pt;
+    const bearing = turf.bearing(pivot, pt) + deg;
+    return turf.destination(pivot, dist, bearing, { units: "kilometers" }).geometry
+      .coordinates as LngLat;
+  });
+}
+
+/** The overlay ring = original ring translated to overlayCenter, then rotated. */
+function computeOverlayRing(ring: LngLat[], center: LngLat, rotation: number): LngLat[] {
+  return rotateRing(translatePolygon(ring, center), rotation, center);
+}
+
+/** A soft irregular blob polygon with the given real-world area (m²), centered at `center`. */
+function blobForArea(areaM2: number, center: LngLat, seed = 1): LngLat[] {
+  const r = Math.sqrt(Math.max(areaM2, 1) / Math.PI);
+  const n = 28;
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+    const wobble =
+      1 +
+      0.12 * Math.sin(t * 3 + seed) +
+      0.07 * Math.sin(t * 5 + seed * 2) +
+      0.04 * Math.sin(t * 7 + seed * 3);
+    const rr = r * wobble;
+    pts.push({ x: Math.sin(t) * rr, y: Math.cos(t) * rr });
+  }
+  return metersPolygonToLngLat(pts, center);
+}
+
+/** Position of the rotate handle: due north of the shape, just outside it. */
+function handlePosition(ring: LngLat[]): { center: LngLat; handle: LngLat } {
+  const center = ringCentroid(ring);
+  let maxKm = 0;
+  for (const pt of ring) {
+    const d = turf.distance(center, pt, { units: "kilometers" });
+    if (d > maxKm) maxKm = d;
+  }
+  const distKm = maxKm * 1.18 + 0.01;
+  const handle = turf.destination(center, distKm, 0, { units: "kilometers" }).geometry
+    .coordinates as LngLat;
+  return { center, handle };
+}
+
+
+
 function ringArea(ring: LngLat[]): number {
   if (ring.length < 3) return 0;
   const closed =
