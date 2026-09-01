@@ -393,6 +393,32 @@ export function ShapeSwapMap() {
         },
       });
 
+      // Rotate handle (shown while a shape is grabbed)
+      map.addSource("handle", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+      map.addLayer({
+        id: "handle-line",
+        type: "line",
+        source: "handle",
+        filter: ["==", "$type", "LineString"],
+        paint: { "line-color": "#0f172a", "line-width": 1.5, "line-opacity": 0.6 },
+      });
+      map.addLayer({
+        id: "handle-point",
+        type: "circle",
+        source: "handle",
+        filter: ["==", "$type", "Point"],
+        paint: {
+          "circle-radius": 10,
+          "circle-color": "#0f172a",
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+        },
+      });
+
+
       // restore saved polygon
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
