@@ -233,6 +233,8 @@ export function ShapeSwapMap() {
       const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
       setOriginalRing(ring);
       setOverlayCenter([c.lng, c.lat]);
+      setOverlayRotation(0);
+      setShapeLabel(shape.label || desc);
       setMode("locked");
       setAiOpen(false);
       setAiDescription("");
@@ -247,6 +249,40 @@ export function ShapeSwapMap() {
     }
   }, [aiDescription, genShape]);
 
+  const loadNews = useCallback(
+    async (type: typeof newsType) => {
+      setNewsLoading(true);
+      setNewsError(null);
+      setNewsEvents([]);
+      try {
+        const events = await findDisasters({ data: { type } });
+        setNewsEvents(events);
+      } catch (e) {
+        setNewsError(e instanceof Error ? e.message : "Something went wrong");
+      } finally {
+        setNewsLoading(false);
+      }
+    },
+    [findDisasters],
+  );
+
+  const pickDisaster = useCallback((e: DisasterEvent) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const center: LngLat = [e.lon, e.lat];
+    const ring = blobForArea(eventAreaM2(e), center, e.title.length % 7);
+    setOriginalRing(ring);
+    setOverlayCenter(center);
+    setOverlayRotation(0);
+    setActiveShape(null);
+    setShapeLabel(`${e.title} · ${e.area_value.toLocaleString()} ${e.area_unit}`);
+    setMode("locked");
+    setNewsOpen(false);
+    const closed = [...ring, ring[0]];
+    const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 60, duration: 900 });
+  }, []);
+
   // keep refs in sync
   useEffect(() => {
     modeRef.current = mode;
@@ -257,6 +293,13 @@ export function ShapeSwapMap() {
   useEffect(() => {
     originalRingRef.current = originalRing;
   }, [originalRing]);
+  useEffect(() => {
+    activeShapeRef.current = activeShape;
+  }, [activeShape]);
+  useEffect(() => {
+    overlayRotationRef.current = overlayRotation;
+  }, [overlayRotation]);
+
 
   // Init map (client only)
   useEffect(() => {
