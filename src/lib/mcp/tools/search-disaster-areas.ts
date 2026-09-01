@@ -140,7 +140,14 @@ export default defineTool({
       throw new ToolError("The model returned an unreadable result.");
     }
 
-    const events = (parsed.events ?? []).slice(0, 12);
+    const events = (parsed.events ?? [])
+      .slice()
+      .sort(
+        (a, b) =>
+          dateSortKey((b as { date?: unknown }).date) -
+          dateSortKey((a as { date?: unknown }).date),
+      )
+      .slice(0, 12);
     if (events.length === 0) throw new ToolError("No events with reported areas were found.");
 
     return {
