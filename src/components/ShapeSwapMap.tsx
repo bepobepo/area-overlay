@@ -466,8 +466,24 @@ export function ShapeSwapMap() {
         map.dragPan.enable();
         map.getCanvas().style.cursor = "";
       }
+      if (rotatingRef.current) {
+        rotatingRef.current = false;
+        rotateStartRef.current = null;
+        map.dragPan.enable();
+        map.getCanvas().style.cursor = "";
+      }
       finishFreehand();
       cancelLongPress();
+    };
+
+    /** Current on-screen ring of a target shape. */
+    const currentRing = (target: ShapeTarget): LngLat[] | null => {
+      const ring = originalRingRef.current;
+      if (!ring || ring.length < 3) return null;
+      if (target === "original") return ring;
+      const c = overlayCenterRef.current;
+      if (!c) return null;
+      return computeOverlayRing(ring, c, overlayRotationRef.current);
     };
 
     const handlePressStart = (
@@ -485,6 +501,37 @@ export function ShapeSwapMap() {
         return;
       }
       if (modeRef.current !== "locked") return;
+
+      // 1) Rotate handle takes priority when a shape is active.
+      const active = activeShapeRef.current;
+      if (active) {
+        const pad = 16;
+        const handleHits = map.queryRenderedFeatures(
+          [
+            [point.x - pad, point.y - pad],
+            [point.x + pad, point.y + pad],
+          ] as unknown as [maplibregl.PointLike, maplibregl.PointLike],
+          { layers: ["handle-point"] },
+        );
+        if (handleHits.length > 0) {
+          const ring = currentRing(active);
+          if (ring) {
+            const pivot = ringCentroid(ring);
+            rotatingRef.current = true;
+            rotateStartRef.current = {
+              pivot,
+              startBearing: turf.bearing(pivot, [lngLat.lng, lngLat.lat]),
+              baseRing: originalRingRef.current ?? ring,
+              baseRotation: active === "overlay" ? overlayRotationRef.current : 0,
+            };
+            dragTargetRef.current = active;
+            map.dragPan.disable();
+            map.getCanvas().style.cursor = "grabbing";
+            return;
+          }
+        }
+      }
+
       const layers: string[] = [];
       if (overlayCenterRef.current) layers.push("overlay-fill");
       if (originalRingRef.current) layers.push("original-fill");
@@ -493,13 +540,18 @@ export function ShapeSwapMap() {
         [point.x, point.y] as unknown as maplibregl.PointLike,
         { layers },
       );
-      if (hits.length === 0) return;
+      if (hits.length === 0) {
+        // Tapping empty map dismisses the rotate handle.
+        if (activeShapeRef.current) setActiveShape(null);
+        return;
+      }
       const hitOverlay = hits.some((h) => h.layer.id === "overlay-fill");
       dragTargetRef.current = hitOverlay ? "overlay" : "original";
       pressStart = { x: point.x, y: point.y };
       longPressTimerRef.current = setTimeout(() => {
         draggingRef.current = true;
         setIsDragging(true);
+        setActiveShape(dragTargetRef.current);
         map.dragPan.disable();
         map.getCanvas().style.cursor = "grabbing";
         if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate(30);
@@ -523,6 +575,28 @@ export function ShapeSwapMap() {
         setDrawingPoints([...drawingRef.current]);
         return;
       }
+      if (rotatingRef.current && rotateStartRef.current) {
+        const { pivot, startBearing, baseRing, baseRotation } = rotateStartRef.current;
+        const bearing = turf.bearing(pivot, [lngLat.lng, lngLat.lat]);
+        let angle = baseRotation + (bearing - startBearing);
+        // light snap to the cardinal angles
+        const norm = ((angle % 360) + 360) % 360;
+        for (const snap of [0, 90, 180, 270, 360]) {
+          if (Math.abs(norm - snap) <= 2.5) {
+            angle += snap - norm;
+            break;
+          }
+        }
+        if (dragTargetRef.current === "overlay") {
+          overlayRotationRef.current = angle;
+          setOverlayRotation(angle);
+        } else {
+          const rotated = rotateRing(baseRing, angle, pivot);
+          originalRingRef.current = rotated;
+          setOriginalRing(rotated);
+        }
+        return;
+      }
       if (draggingRef.current) {
         if (dragTargetRef.current === "overlay") {
           setOverlayCenter([lngLat.lng, lngLat.lat]);
@@ -542,6 +616,7 @@ export function ShapeSwapMap() {
         if (dx * dx + dy * dy > MOVE_TOLERANCE * MOVE_TOLERANCE) cancelLongPress();
       }
     };
+
 
 
     map.on("mousedown", (e) => handlePressStart(e.point, e.lngLat));
