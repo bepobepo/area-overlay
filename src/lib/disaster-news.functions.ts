@@ -30,17 +30,33 @@ export function eventAreaM2(e: Pick<DisasterEvent, "area_value" | "area_unit">):
   return e.area_value * (AREA_UNIT_TO_M2[e.area_unit] ?? 1);
 }
 
-const SYSTEM = `You are a research assistant that lists recent, well-reported weather and climate related disasters.
+function systemPrompt(today: string) {
+  return `You are a research assistant that lists the MOST RECENT, well-reported weather and climate related disasters.
+
+Today's date is ${today}.
 
 Rules:
 - Only include real, widely reported events.
-- Prefer the most recent events you know about; give the date as YYYY-MM or YYYY-MM-DD.
+- RECENCY IS THE TOP PRIORITY. Only include events from the last 12 months relative to today. Only if you cannot find enough such events may you go back further, and never more than 2 years back.
+- Order the array strictly newest first.
+- Give the date as YYYY-MM or YYYY-MM-DD.
 - Each event MUST have a reported affected-area figure (burned area, flooded area, area of landslide/impact zone). Use the unit the reporting used.
 - lat/lon must be the approximate center of the affected area.
 - summary: one short sentence.
+- details: 2-3 sentences on what happened and its impact.
+- people_affected: best reported number of people affected (killed, displaced or evacuated). Use null if not reported.
+- people_affected_note: what that number counts, e.g. "displaced", "evacuated", "killed". Use "" when people_affected is null.
 - source: the outlet or agency that reported the area figure (e.g. "Reuters", "Copernicus EMS"). Use "unknown" if unsure.
 - Never invent figures. Skip events whose affected area you do not know.
 - Return 6 to 10 events.`;
+}
+
+/** Sortable key from a YYYY / YYYY-MM / YYYY-MM-DD date string. */
+export function dateSortKey(date: string): number {
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(date?.trim() ?? "");
+  if (!m) return 0;
+  return Number(m[1]) * 10000 + Number(m[2] ?? "01") * 100 + Number(m[3] ?? "01");
+}
 
 export const searchDisasters = createServerFn({ method: "POST" })
   .inputValidator((data) =>
