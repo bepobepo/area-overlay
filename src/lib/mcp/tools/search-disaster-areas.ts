@@ -57,6 +57,9 @@ const SCHEMA = {
           lon: { type: "number" },
           summary: { type: "string" },
           source: { type: "string" },
+          details: { type: "string" },
+          people_affected: { type: ["number", "null"] },
+          people_affected_note: { type: "string" },
         },
         required: [
           "title",
