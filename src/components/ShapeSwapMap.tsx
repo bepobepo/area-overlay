@@ -1194,6 +1194,93 @@ export function ShapeSwapMap() {
           </div>
         </div>
       )}
+
+      {newsOpen && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-3">
+          <div className="w-full max-w-md max-h-[85vh] flex flex-col rounded-2xl bg-background shadow-2xl ring-1 ring-black/10 p-4 gap-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Disaster areas from the news</h2>
+              <button
+                onClick={() => setNewsOpen(false)}
+                className="text-muted-foreground text-lg leading-none px-2"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Pick a recent event to draw its reported affected area on the map, then compare it
+              anywhere else.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {(["any", "wildfire", "flood", "hurricane", "landslide", "earthquake"] as const).map(
+                (t) => (
+                  <button
+                    key={t}
+                    onClick={() => {
+                      setNewsType(t);
+                      void loadNews(t);
+                    }}
+                    disabled={newsLoading}
+                    className={`text-xs px-2.5 py-1 rounded-full capitalize disabled:opacity-50 ${
+                      newsType === t
+                        ? "bg-amber-600 text-white"
+                        : "bg-secondary text-secondary-foreground hover:bg-accent"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ),
+              )}
+            </div>
+
+            <div className="flex-1 overflow-y-auto -mx-1 px-1">
+              {newsLoading && (
+                <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
+                  <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                  Searching the latest reports…
+                </div>
+              )}
+              {newsError && !newsLoading && (
+                <div className="py-4 text-xs text-destructive">{newsError}</div>
+              )}
+              {!newsLoading &&
+                newsEvents.map((e, i) => (
+                  <button
+                    key={`${e.title}-${i}`}
+                    onClick={() => pickDisaster(e)}
+                    className="w-full text-left rounded-xl border border-black/5 hover:bg-accent px-3 py-2.5 mb-2"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-medium line-clamp-2">{e.title}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
+                        {e.type}
+                      </span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {e.place}
+                      {e.country ? `, ${e.country}` : ""} · {e.date}
+                    </div>
+                    <div className="text-xs mt-1 font-medium text-amber-700">
+                      {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
+                      {formatArea(eventAreaM2(e))}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">{e.summary}</div>
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      Reported estimate{e.source && e.source !== "unknown" ? ` · ${e.source}` : ""}
+                    </div>
+                  </button>
+                ))}
+              {!newsLoading && !newsError && newsEvents.length === 0 && (
+                <div className="py-6 text-center text-xs text-muted-foreground">
+                  Choose a category to load events.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
