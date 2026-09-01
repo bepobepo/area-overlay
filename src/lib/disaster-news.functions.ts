@@ -13,6 +13,9 @@ export type DisasterEvent = {
   lon: number;
   summary: string;
   source: string;
+  details: string;
+  people_affected: number | null;
+  people_affected_note: string;
 };
 
 export const AREA_UNIT_TO_M2: Record<DisasterEvent["area_unit"], number> = {
