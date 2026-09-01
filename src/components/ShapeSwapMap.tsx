@@ -1027,8 +1027,18 @@ export function ShapeSwapMap() {
                   <span aria-hidden>✨</span> Draw with AI
                 </button>
               </div>
+              <button
+                onClick={() => {
+                  setNewsOpen(true);
+                  if (newsEvents.length === 0 && !newsLoading) void loadNews(newsType);
+                }}
+                className="rounded-xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-medium py-3 text-sm transition inline-flex items-center justify-center gap-1.5"
+              >
+                <span aria-hidden>🔥</span> Disaster areas from the news
+              </button>
             </div>
           )}
+
 
 
           {mode === "drawing" && (
