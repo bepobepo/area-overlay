@@ -1071,9 +1071,11 @@ export function ShapeSwapMap() {
           {mode === "locked" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                {overlayCenter
-                  ? "Long-press any shape to drag it, or search a new place."
-                  : "Now search a place above to overlay your shape there."}
+                {activeShape
+                  ? "Drag to move it, or drag the round handle to rotate. Tap the map to release."
+                  : overlayCenter
+                    ? "Long-press any shape to drag or rotate it, or search a new place."
+                    : "Now search a place above to overlay your shape there."}
               </p>
               <div className="flex gap-2">
                 <button
@@ -1094,7 +1096,7 @@ export function ShapeSwapMap() {
                     onClick={() => {
                       const map = mapRef.current;
                       if (map && originalRing && overlayCenter) {
-                        const moved = translatePolygon(originalRing, overlayCenter);
+                        const moved = computeOverlayRing(originalRing, overlayCenter, overlayRotation);
                         const closed = [...moved, moved[0]];
                         const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
                         map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 60, duration: 800 });
@@ -1105,6 +1107,7 @@ export function ShapeSwapMap() {
                     View overlay
                   </button>
                 )}
+
                 <button
                   onClick={clearAll}
                   className="flex-1 rounded-xl bg-destructive/90 hover:bg-destructive text-white font-medium py-3 text-sm"
