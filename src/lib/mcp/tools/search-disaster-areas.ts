@@ -9,17 +9,32 @@ function runtimeEnv(name: string): string | undefined {
   return (globalThis as RuntimeGlobals).process?.env?.[name];
 }
 
-const SYSTEM = `You are a research assistant that lists recent, well-reported weather and climate related disasters.
+function systemPrompt(today: string) {
+  return `You are a research assistant that lists the MOST RECENT, well-reported weather and climate related disasters.
+
+Today's date is ${today}.
 
 Rules:
 - Only include real, widely reported events.
-- Prefer the most recent events you know about; give the date as YYYY-MM or YYYY-MM-DD.
+- RECENCY IS THE TOP PRIORITY. Only include events from the last 12 months relative to today; go back further only if needed, never more than 2 years.
+- Order the array strictly newest first.
+- Give the date as YYYY-MM or YYYY-MM-DD.
 - Each event MUST have a reported affected-area figure (burned area, flooded area, area of landslide/impact zone). Use the unit the reporting used.
 - lat/lon must be the approximate center of the affected area.
 - summary: one short sentence.
+- details: 2-3 sentences on what happened and its impact.
+- people_affected: best reported number of people affected (killed, displaced or evacuated). Use null if not reported.
+- people_affected_note: what that number counts, e.g. "displaced". Use "" when people_affected is null.
 - source: the outlet or agency that reported the area figure. Use "unknown" if unsure.
 - Never invent figures. Skip events whose affected area you do not know.
 - Return 6 to 10 events.`;
+}
+
+function dateSortKey(date: unknown): number {
+  const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(String(date ?? "").trim());
+  if (!m) return 0;
+  return Number(m[1]) * 10000 + Number(m[2] ?? "01") * 100 + Number(m[3] ?? "01");
+}
 
 const SCHEMA = {
   type: "object",
