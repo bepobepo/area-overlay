@@ -978,10 +978,18 @@ export function ShapeSwapMap() {
             <span className="inline-flex items-center gap-1.5 rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
               <span className="h-2.5 w-2.5 rounded-sm bg-pink-500" />
               Overlay
+              {overlayRotation ? ` · ${Math.round(((overlayRotation % 360) + 360) % 360)}°` : ""}
+            </span>
+          )}
+          {shapeLabel && (
+            <span className="inline-flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
+              <span aria-hidden>🏷️</span>
+              <span className="truncate">{shapeLabel}</span>
             </span>
           )}
         </div>
       )}
+
 
       {/* Bottom sheet */}
       <div className="mt-auto relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
