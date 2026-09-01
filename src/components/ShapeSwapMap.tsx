@@ -5,15 +5,22 @@ import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
 import { generateShape } from "@/lib/ai-shape.functions";
+import {
+  searchDisasters,
+  eventAreaM2,
+  type DisasterEvent,
+} from "@/lib/disaster-news.functions";
 
 type LngLat = [number, number];
 type Mode = "idle" | "drawing" | "locked";
+type ShapeTarget = "overlay" | "original";
 
 const MAPTILER_KEY = "PHdof98UIhcQKfX6LgHd";
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STORAGE_KEY = "shapeswap.polygon.v1";
 const ONBOARDING_BUTTONS_KEY = "shapeswap.onboarding.buttonsDismissed.v1";
 const ONBOARDING_SEARCH_KEY = "shapeswap.onboarding.searchDismissed.v1";
+
 
 /** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
 function translatePolygon(ring: LngLat[], newCenter: LngLat): LngLat[] {
