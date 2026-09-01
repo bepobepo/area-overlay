@@ -113,10 +113,10 @@ export default defineTool({
       body: JSON.stringify({
         model: "google/gemini-3-flash-preview",
         messages: [
-          { role: "system", content: SYSTEM },
+          { role: "system", content: systemPrompt(today) },
           {
             role: "user",
-            content: `List recent disasters (${filter}) with reported affected areas.${extra}`,
+            content: `List the most recent disasters (${filter}) with reported affected areas, newest first. Today is ${today}; strongly prefer events from the last 12 months.${extra}`,
           },
         ],
         response_format: {
