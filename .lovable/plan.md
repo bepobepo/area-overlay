@@ -1,35 +1,33 @@
-## Fixes to the onboarding guide
+# Rotate handle + AI disaster-area comparison
 
-**1. Clearer wording on step 2**
-- Change the search-bar tip from "Now let's compare the selected area to another on the map." to **"Now search for a place on the map to compare it to."**
+## 1. Rotate handle
 
-**2. "Got it" on step 1 must not skip step 2**
-- Current bug: both tips share a single `onboardingStep` state, and "Got it" on the buttons tip jumps straight to `"done"`, so the search-bar tip never shows.
-- Fix: track dismissal per step. Replace the single `onboardingStep` with two independent flags persisted in localStorage:
-  - `shapeswap.onboarding.buttonsDismissed`
-  - `shapeswap.onboarding.searchDismissed`
-- Show the buttons tip when `!buttonsDismissed && mode === "idle"`.
-- Show the search tip when `!searchDismissed && mode === "locked" && !overlayCenter`.
-- "Got it" on each tip only sets its own flag. Picking a search result also auto-dismisses the search tip.
+Today a long press "grabs" a shape so it can be dragged. Add rotation to that same grabbed state.
 
-**3. Brighter, actually blinking frame (not the whole card fading)**
-- Remove `animate-pulse` from the card/search containers (it fades the whole element's opacity — that's what looked "slow and unclear").
-- Add a dedicated blinking outline ring rendered as an absolutely-positioned sibling `<span>` inside each highlighted container, so only the frame animates and the content stays fully opaque.
-- Define a new keyframe in `src/styles.css`:
-  ```css
-  @keyframes highlight-blink {
-    0%, 100% { box-shadow: 0 0 0 2px hsl(var(--ring-color)), 0 0 16px 4px hsl(var(--ring-color) / 0.6); opacity: 1; }
-    50%      { box-shadow: 0 0 0 3px hsl(var(--ring-color)), 0 0 28px 8px hsl(var(--ring-color) / 0.9); opacity: 1; }
-  }
-  .animate-highlight-blink { animation: highlight-blink 1s ease-in-out infinite; }
-  ```
-- Apply it to:
-  - The bottom-sheet buttons container — bright fuchsia frame while step 1 is active.
-  - The top search-bar container — bright cyan frame while step 2 is active.
-- The frame overlay uses `pointer-events-none` and `rounded-2xl` matching the container so clicks still work and the ring hugs the corners.
+- After the long press succeeds (shape becomes active), show a small circular handle just outside the shape, above its top edge, connected by a thin line to the shape's center.
+- Dragging the handle rotates the shape around its own center; the shape stays in place and keeps its real-world size.
+- Rotation works on whichever shape was grabbed (the drawn shape or the placed overlay), matching the current drag behavior.
+- While rotating, map panning is disabled and the shape gets the same "active" styling used during drag.
+- The handle disappears when the user taps elsewhere on the map, or on Reset.
+- Snapping: rotation is free-form, with a light snap to 0/90/180/270 degrees when within a couple of degrees.
 
-**4. Files touched**
-- `src/components/ShapeSwapMap.tsx` — state split, tip text, frame overlay markup.
-- `src/styles.css` — new `highlight-blink` keyframe + utility class.
+## 2. Compare real disaster areas from the news
 
-No changes to drawing, AI, search, or persistence logic.
+New third action next to "Draw on map" / "Draw with AI": **Disaster areas**.
+
+- Opens a sheet with a short prompt and quick filters (Wildfire, Flood, Hurricane, Landslide, Earthquake, Any).
+- AI returns a list of recent weather/climate disaster events, each showing: event name, place, date, disaster type, and the affected area with its unit (e.g. "18,400 hectares burned", "flooded area ~120 km²"), plus a one-line summary.
+- Tapping an event draws a polygon of that real affected area on the map — a rough outline sized to match the reported area — labeled with the event name.
+- From there the existing flow applies: search another location and the outline moves there at true scale, and it can be dragged and rotated.
+- Each item notes that the figure is a reported estimate, with the source name when the model provides one.
+
+## Technical notes
+
+- Rotation: reuse the existing long-press state in `src/components/ShapeSwapMap.tsx`. Store a rotation angle per shape and apply it with a geodesic rotate about the shape centroid (`@turf/turf` `transformRotate`), so real-world dimensions are preserved. The handle is a MapLibre symbol/circle layer plus a line layer, hit-tested with `queryRenderedFeatures` like the existing drag.
+- News search: new server function `src/lib/disaster-news.functions.ts` calling the Lovable AI Gateway (`google/gemini-3-flash-preview`) with a JSON-schema response returning `events[]` (`title`, `place`, `country`, `date`, `type`, `area_value`, `area_unit`, `lat`, `lon`, `summary`, `source`). The model is asked for recent, well-reported events; results are validated and clamped server-side.
+- Area to polygon: convert the reported area to m² and generate an outline of that area (rounded blob for fire/flood scars, using the existing meters-to-lng/lat helper), so the drawn shape matches the reported hectares/km² rather than tracing an exact burn perimeter.
+- Also expose the news lookup as a third MCP tool (`search_disaster_areas`) so connected assistants can use it, then re-extract the MCP manifest.
+
+## Caveats
+
+- Event figures come from the model's knowledge of reporting, so the very latest events may be missing and numbers are approximate. Outlines represent the correct total area, not the exact real perimeter.
