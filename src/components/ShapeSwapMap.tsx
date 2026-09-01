@@ -819,6 +819,9 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setOriginalRing(null);
     setOverlayCenter(null);
+    setOverlayRotation(0);
+    setActiveShape(null);
+    setShapeLabel(null);
     setMode("drawing");
   }, []);
 
@@ -837,6 +840,9 @@ export function ShapeSwapMap() {
     setDrawingPoints([]);
     setOriginalRing(null);
     setOverlayCenter(null);
+    setOverlayRotation(0);
+    setActiveShape(null);
+    setShapeLabel(null);
     setQuery("");
     setResults([]);
     setMode("idle");
@@ -844,7 +850,7 @@ export function ShapeSwapMap() {
     const map = mapRef.current;
     if (map) {
       const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-      for (const id of ["original", "overlay", "drawing"] as const) {
+      for (const id of ["original", "overlay", "drawing", "handle"] as const) {
         const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
         if (src) src.setData(empty);
       }
@@ -853,6 +859,7 @@ export function ShapeSwapMap() {
       localStorage.removeItem(STORAGE_KEY);
     } catch {}
   }, []);
+
 
   const pickResult = useCallback(
     (r: GeocodeResult) => {
