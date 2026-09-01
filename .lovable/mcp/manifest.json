@@ -61,6 +61,50 @@
           ]
         },
         "outputSchema": null
+      },
+      {
+        "name": "search_disaster_areas",
+        "title": "Search disaster areas",
+        "description": "List recent weather and climate disasters (wildfires, floods, hurricanes, landslides, earthquakes) with their reported affected area and approximate coordinates, so the areas can be compared.",
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": [
+                "any",
+                "wildfire",
+                "flood",
+                "hurricane",
+                "landslide",
+                "earthquake"
+              ],
+              "description": "Disaster type filter."
+            },
+            "query": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional extra focus, e.g. a region or year. Use null for none."
+            }
+          },
+          "required": [
+            "type",
+            "query"
+          ]
+        },
+        "outputSchema": null
       }
     ]
   }
