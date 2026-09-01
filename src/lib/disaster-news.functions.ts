@@ -174,6 +174,8 @@ export const searchDisasters = createServerFn({ method: "POST" })
         eventAreaM2(e) < 2_000_000_000_000,
     );
 
+    events.sort((a, b) => dateSortKey(b.date) - dateSortKey(a.date));
+
     if (events.length === 0) throw new Error("No events with reported areas were returned. Try again.");
     return events.slice(0, 12);
   });
