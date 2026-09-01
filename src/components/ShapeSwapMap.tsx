@@ -1202,7 +1202,10 @@ export function ShapeSwapMap() {
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Disaster areas from the news</h2>
               <button
-                onClick={() => setNewsOpen(false)}
+                onClick={() => {
+                  setNewsOpen(false);
+                  setDetailEvent(null);
+                }}
                 className="text-muted-foreground text-lg leading-none px-2"
                 aria-label="Close"
               >
