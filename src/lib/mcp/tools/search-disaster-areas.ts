@@ -105,6 +105,7 @@ export default defineTool({
 
     const filter = type === "any" ? "any weather/climate disaster type" : type;
     const extra = query?.trim() ? ` Focus on: ${query.trim()}.` : "";
+    const today = new Date().toISOString().slice(0, 10);
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
