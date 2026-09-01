@@ -1209,75 +1209,159 @@ export function ShapeSwapMap() {
                 ✕
               </button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Pick a recent event to draw its reported affected area on the map, then compare it
-              anywhere else.
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {(["any", "wildfire", "flood", "hurricane", "landslide", "earthquake"] as const).map(
-                (t) => (
-                  <button
-                    key={t}
-                    onClick={() => {
-                      setNewsType(t);
-                      void loadNews(t);
-                    }}
-                    disabled={newsLoading}
-                    className={`text-xs px-2.5 py-1 rounded-full capitalize disabled:opacity-50 ${
-                      newsType === t
-                        ? "bg-amber-600 text-white"
-                        : "bg-secondary text-secondary-foreground hover:bg-accent"
-                    }`}
-                  >
-                    {t}
-                  </button>
-                ),
-              )}
-            </div>
+            {detailEvent ? (
+              <div className="flex-1 overflow-y-auto -mx-1 px-1">
+                <button
+                  onClick={() => setDetailEvent(null)}
+                  className="text-xs text-muted-foreground hover:text-foreground mb-2"
+                >
+                  ← Back to events
+                </button>
+                <h3 className="text-sm font-semibold">{detailEvent.title}</h3>
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  {detailEvent.place}
+                  {detailEvent.country ? `, ${detailEvent.country}` : ""} · {detailEvent.date} ·{" "}
+                  {detailEvent.type}
+                </div>
+                <p className="text-xs mt-3 leading-relaxed">
+                  {detailEvent.details || detailEvent.summary}
+                </p>
+                <dl className="mt-3 space-y-1.5 text-xs">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Affected area</dt>
+                    <dd className="font-medium text-amber-700 text-right">
+                      {detailEvent.area_value.toLocaleString()} {detailEvent.area_unit} ·{" "}
+                      {formatArea(eventAreaM2(detailEvent))}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">People affected</dt>
+                    <dd className="font-medium text-right">
+                      {typeof detailEvent.people_affected === "number" &&
+                      Number.isFinite(detailEvent.people_affected)
+                        ? `${detailEvent.people_affected.toLocaleString()}${
+                            detailEvent.people_affected_note
+                              ? ` ${detailEvent.people_affected_note}`
+                              : ""
+                          }`
+                        : "Not reported"}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground">Source</dt>
+                    <dd className="text-right">
+                      {detailEvent.source && detailEvent.source !== "unknown"
+                        ? detailEvent.source
+                        : "Not reported"}
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  onClick={() => {
+                    const e = detailEvent;
+                    setDetailEvent(null);
+                    pickDisaster(e);
+                  }}
+                  className="mt-4 w-full rounded-xl bg-amber-600 text-white text-sm font-medium py-2.5"
+                >
+                  Draw this area on the map
+                </button>
+                <p className="text-[10px] text-muted-foreground mt-2">
+                  Figures are reported estimates.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Pick a recent event to draw its reported affected area on the map, then compare it
+                  anywhere else. Newest events first — coverage depends on the AI's knowledge, so
+                  the very latest events may be missing.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(
+                    ["any", "wildfire", "flood", "hurricane", "landslide", "earthquake"] as const
+                  ).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => {
+                        setNewsType(t);
+                        void loadNews(t);
+                      }}
+                      disabled={newsLoading}
+                      className={`text-xs px-2.5 py-1 rounded-full capitalize disabled:opacity-50 ${
+                        newsType === t
+                          ? "bg-amber-600 text-white"
+                          : "bg-secondary text-secondary-foreground hover:bg-accent"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
 
-            <div className="flex-1 overflow-y-auto -mx-1 px-1">
-              {newsLoading && (
-                <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
-                  <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
-                  Searching the latest reports…
+                <div className="flex-1 overflow-y-auto -mx-1 px-1">
+                  {newsLoading && (
+                    <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
+                      <span className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                      Searching the latest reports…
+                    </div>
+                  )}
+                  {newsError && !newsLoading && (
+                    <div className="py-4 text-xs text-destructive">{newsError}</div>
+                  )}
+                  {!newsLoading &&
+                    newsEvents.map((e, i) => (
+                      <div
+                        key={`${e.title}-${i}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => pickDisaster(e)}
+                        onKeyDown={(ev) => {
+                          if (ev.key === "Enter" || ev.key === " ") pickDisaster(e);
+                        }}
+                        className="w-full text-left rounded-xl border border-black/5 hover:bg-accent px-3 py-2.5 mb-2 cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-medium line-clamp-2">{e.title}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {e.type}
+                            </span>
+                            <button
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                setDetailEvent(e);
+                              }}
+                              aria-label={`More about ${e.title}`}
+                              className="h-6 w-6 rounded-full border border-black/10 text-[11px] font-serif italic text-muted-foreground hover:bg-background"
+                            >
+                              i
+                            </button>
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          {e.place}
+                          {e.country ? `, ${e.country}` : ""} · {e.date}
+                        </div>
+                        <div className="text-xs mt-1 font-medium text-amber-700">
+                          {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
+                          {formatArea(eventAreaM2(e))}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">{e.summary}</div>
+                        <div className="text-[10px] text-muted-foreground mt-1">
+                          Reported estimate
+                          {e.source && e.source !== "unknown" ? ` · ${e.source}` : ""}
+                        </div>
+                      </div>
+                    ))}
+                  {!newsLoading && !newsError && newsEvents.length === 0 && (
+                    <div className="py-6 text-center text-xs text-muted-foreground">
+                      Choose a category to load events.
+                    </div>
+                  )}
                 </div>
-              )}
-              {newsError && !newsLoading && (
-                <div className="py-4 text-xs text-destructive">{newsError}</div>
-              )}
-              {!newsLoading &&
-                newsEvents.map((e, i) => (
-                  <button
-                    key={`${e.title}-${i}`}
-                    onClick={() => pickDisaster(e)}
-                    className="w-full text-left rounded-xl border border-black/5 hover:bg-accent px-3 py-2.5 mb-2"
-                  >
-                    <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm font-medium line-clamp-2">{e.title}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
-                        {e.type}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {e.place}
-                      {e.country ? `, ${e.country}` : ""} · {e.date}
-                    </div>
-                    <div className="text-xs mt-1 font-medium text-amber-700">
-                      {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
-                      {formatArea(eventAreaM2(e))}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-1">{e.summary}</div>
-                    <div className="text-[10px] text-muted-foreground mt-1">
-                      Reported estimate{e.source && e.source !== "unknown" ? ` · ${e.source}` : ""}
-                    </div>
-                  </button>
-                ))}
-              {!newsLoading && !newsError && newsEvents.length === 0 && (
-                <div className="py-6 text-center text-xs text-muted-foreground">
-                  Choose a category to load events.
-                </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       )}
