@@ -139,10 +139,19 @@ export function ShapeSwapMap() {
   const modeRef = useRef<Mode>("idle");
   const overlayCenterRef = useRef<LngLat | null>(null);
   const originalRingRef = useRef<LngLat[] | null>(null);
-  const dragTargetRef = useRef<"overlay" | "original">("overlay");
+  const dragTargetRef = useRef<ShapeTarget>("overlay");
   const draggingRef = useRef(false);
   const freehandRef = useRef(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeShapeRef = useRef<ShapeTarget | null>(null);
+  const overlayRotationRef = useRef(0);
+  const rotatingRef = useRef(false);
+  const rotateStartRef = useRef<{
+    pivot: LngLat;
+    startBearing: number;
+    baseRing: LngLat[];
+    baseRotation: number;
+  } | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   useEffect(() => {
@@ -157,6 +166,8 @@ export function ShapeSwapMap() {
   const [mode, setMode] = useState<Mode>("idle");
   const [originalRing, setOriginalRing] = useState<LngLat[] | null>(null);
   const [overlayCenter, setOverlayCenter] = useState<LngLat | null>(null);
+  const [overlayRotation, setOverlayRotation] = useState(0);
+  const [activeShape, setActiveShape] = useState<ShapeTarget | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -165,12 +176,24 @@ export function ShapeSwapMap() {
 
   const search = useServerFn(searchPlaces);
   const genShape = useServerFn(generateShape);
+  const findDisasters = useServerFn(searchDisasters);
 
   // AI dialog state
   const [aiOpen, setAiOpen] = useState(false);
   const [aiDescription, setAiDescription] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  // Disaster-news dialog state
+  const [newsOpen, setNewsOpen] = useState(false);
+  const [newsType, setNewsType] = useState<
+    "any" | "wildfire" | "flood" | "hurricane" | "landslide" | "earthquake"
+  >("any");
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [newsEvents, setNewsEvents] = useState<DisasterEvent[]>([]);
+  const [shapeLabel, setShapeLabel] = useState<string | null>(null);
+
 
   // Onboarding — two independent dismissal flags
   const [buttonsTipDismissed, setButtonsTipDismissed] = useState(true);
