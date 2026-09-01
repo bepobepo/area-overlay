@@ -75,6 +75,7 @@ export const searchDisasters = createServerFn({ method: "POST" })
 
     const filter = data.type === "any" ? "any weather/climate disaster type" : data.type;
     const extra = data.query?.trim() ? ` Focus on: ${data.query.trim()}.` : "";
+    const today = new Date().toISOString().slice(0, 10);
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
