@@ -185,6 +185,8 @@ export function ShapeSwapMap() {
   const [newsError, setNewsError] = useState<string | null>(null);
   const [newsEvents, setNewsEvents] = useState<DisasterEvent[]>([]);
   const [detailEvent, setDetailEvent] = useState<DisasterEvent | null>(null);
+  const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null);
+  const [newsStale, setNewsStale] = useState(false);
   const [shapeLabel, setShapeLabel] = useState<string | null>(null);
 
 
@@ -243,13 +245,15 @@ export function ShapeSwapMap() {
   }, [aiDescription, genShape]);
 
   const loadNews = useCallback(
-    async (type: typeof newsType) => {
+    async (type: typeof newsType, force = false) => {
       setNewsLoading(true);
       setNewsError(null);
       setNewsEvents([]);
       try {
-        const events = await findDisasters({ data: { type } });
-        setNewsEvents(events);
+        const result = await findDisasters({ data: { type, force } });
+        setNewsEvents(result.events);
+        setNewsFetchedAt(result.fetched_at);
+        setNewsStale(result.stale);
       } catch (e) {
         setNewsError(e instanceof Error ? e.message : "Something went wrong");
       } finally {
@@ -258,6 +262,7 @@ export function ShapeSwapMap() {
     },
     [findDisasters],
   );
+
 
   const pickDisaster = useCallback((e: DisasterEvent) => {
     const map = mapRef.current;
@@ -1297,6 +1302,30 @@ export function ShapeSwapMap() {
                     </button>
                   ))}
                 </div>
+
+                {(newsFetchedAt || newsLoading) && (
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>
+                      {newsFetchedAt
+                        ? `Updated ${new Date(newsFetchedAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}${newsStale ? " · may be out of date" : ""}`
+                        : "Loading…"}
+                    </span>
+                    <button
+                      onClick={() => void loadNews(newsType, true)}
+                      disabled={newsLoading}
+                      className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
+
+
 
                 <div className="flex-1 overflow-y-auto -mx-1 px-1">
                   {newsLoading && (

@@ -65,7 +65,7 @@
       {
         "name": "search_disaster_areas",
         "title": "Search disaster areas",
-        "description": "List recent weather and climate disasters (wildfires, floods, hurricanes, landslides, earthquakes) with their reported affected area and approximate coordinates, so the areas can be compared.",
+        "description": "List recent weather and climate disasters (wildfires, floods, hurricanes, landslides, earthquakes) with their reported affected area and approximate coordinates, so the areas can be compared. Results are cached for the day.",
         "annotations": {
           "readOnlyHint": true,
           "openWorldHint": true

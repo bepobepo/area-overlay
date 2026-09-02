@@ -1,0 +1,1 @@
+ALTER TABLE public.job_state ADD COLUMN IF NOT EXISTS cron_token text NOT NULL DEFAULT gen_random_uuid()::text;
