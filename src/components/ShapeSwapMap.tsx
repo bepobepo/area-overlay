@@ -185,6 +185,8 @@ export function ShapeSwapMap() {
   const [newsError, setNewsError] = useState<string | null>(null);
   const [newsEvents, setNewsEvents] = useState<DisasterEvent[]>([]);
   const [detailEvent, setDetailEvent] = useState<DisasterEvent | null>(null);
+  const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null);
+  const [newsStale, setNewsStale] = useState(false);
   const [shapeLabel, setShapeLabel] = useState<string | null>(null);
 
 
