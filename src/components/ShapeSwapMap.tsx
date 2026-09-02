@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
+import { RotateCw } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
@@ -94,19 +95,8 @@ function blobForArea(areaM2: number, center: LngLat, seed = 1): LngLat[] {
   return metersPolygonToLngLat(pts, center);
 }
 
-/** Position of the rotate handle: due north of the shape, just outside it. */
-function handlePosition(ring: LngLat[]): { center: LngLat; handle: LngLat } {
-  const center = ringCentroid(ring);
-  let maxKm = 0;
-  for (const pt of ring) {
-    const d = turf.distance(center, pt, { units: "kilometers" });
-    if (d > maxKm) maxKm = d;
-  }
-  const distKm = maxKm * 1.18 + 0.01;
-  const handle = turf.destination(center, distKm, 0, { units: "kilometers" }).geometry
-    .coordinates as LngLat;
-  return { center, handle };
-}
+
+
 
 
 
@@ -152,6 +142,8 @@ export function ShapeSwapMap() {
     baseRing: LngLat[];
     baseRotation: number;
   } | null>(null);
+  const handleElRef = useRef<HTMLDivElement>(null);
+  const handleBtnRef = useRef<HTMLButtonElement>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   useEffect(() => {
@@ -394,30 +386,8 @@ export function ShapeSwapMap() {
         },
       });
 
-      // Rotate handle (shown while a shape is grabbed)
-      map.addSource("handle", {
-        type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
-      });
-      map.addLayer({
-        id: "handle-line",
-        type: "line",
-        source: "handle",
-        filter: ["==", "$type", "LineString"],
-        paint: { "line-color": "#0f172a", "line-width": 1.5, "line-opacity": 0.6 },
-      });
-      map.addLayer({
-        id: "handle-point",
-        type: "circle",
-        source: "handle",
-        filter: ["==", "$type", "Point"],
-        paint: {
-          "circle-radius": 10,
-          "circle-color": "#0f172a",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 3,
-        },
-      });
+
+
 
 
       // restore saved polygon
@@ -503,35 +473,8 @@ export function ShapeSwapMap() {
       }
       if (modeRef.current !== "locked") return;
 
-      // 1) Rotate handle takes priority when a shape is active.
-      const active = activeShapeRef.current;
-      if (active) {
-        const pad = 16;
-        const handleHits = map.queryRenderedFeatures(
-          [
-            [point.x - pad, point.y - pad],
-            [point.x + pad, point.y + pad],
-          ] as unknown as [maplibregl.PointLike, maplibregl.PointLike],
-          { layers: ["handle-point"] },
-        );
-        if (handleHits.length > 0) {
-          const ring = currentRing(active);
-          if (ring) {
-            const pivot = ringCentroid(ring);
-            rotatingRef.current = true;
-            rotateStartRef.current = {
-              pivot,
-              startBearing: turf.bearing(pivot, [lngLat.lng, lngLat.lat]),
-              baseRing: originalRingRef.current ?? ring,
-              baseRotation: active === "overlay" ? overlayRotationRef.current : 0,
-            };
-            dragTargetRef.current = active;
-            map.dragPan.disable();
-            map.getCanvas().style.cursor = "grabbing";
-            return;
-          }
-        }
-      }
+      // Rotation is started by the DOM rotate handle (see below), not here.
+
 
       const layers: string[] = [];
       if (overlayCenterRef.current) layers.push("overlay-fill");
@@ -641,14 +584,84 @@ export function ShapeSwapMap() {
     map.on("touchend", endDrag);
     map.on("touchcancel", endDrag);
 
+    // --- Rotate handle (DOM overlay, screen-anchored above the shape) ---
+    const positionRotateHandle = () => {
+      const el = handleElRef.current;
+      if (!el) return;
+      const active = activeShapeRef.current;
+      const ring = active ? currentRing(active) : null;
+      if (!ring || ring.length < 3) {
+        el.style.display = "none";
+        return;
+      }
+      let minY = Infinity;
+      let sumX = 0;
+      for (const c of ring) {
+        const p = map.project(c);
+        if (p.y < minY) minY = p.y;
+        sumX += p.x;
+      }
+      el.style.display = "block";
+      el.style.transform = `translate(${sumX / ring.length}px, ${minY}px)`;
+    };
+    map.on("render", positionRotateHandle);
+
+    const pointerToMap = (clientX: number, clientY: number) => {
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const ll = map.unproject([x, y]);
+      return { point: { x, y }, lngLat: { lng: ll.lng, lat: ll.lat } };
+    };
+
+    const onHandleDown = (ev: PointerEvent) => {
+      const active = activeShapeRef.current;
+      if (!active) return;
+      const ring = currentRing(active);
+      if (!ring) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const { lngLat } = pointerToMap(ev.clientX, ev.clientY);
+      const pivot = ringCentroid(ring);
+      rotatingRef.current = true;
+      rotateStartRef.current = {
+        pivot,
+        startBearing: turf.bearing(pivot, [lngLat.lng, lngLat.lat]),
+        baseRing: originalRingRef.current ?? ring,
+        baseRotation: active === "overlay" ? overlayRotationRef.current : 0,
+      };
+      dragTargetRef.current = active;
+      map.dragPan.disable();
+    };
+
+    const onWindowPointerMove = (ev: PointerEvent) => {
+      if (!rotatingRef.current) return;
+      ev.preventDefault();
+      const { point, lngLat } = pointerToMap(ev.clientX, ev.clientY);
+      handlePressMove(point, lngLat);
+    };
+    const onWindowPointerUp = () => {
+      if (rotatingRef.current) endDrag();
+    };
+
+    const handleBtn = handleBtnRef.current;
+    handleBtn?.addEventListener("pointerdown", onHandleDown);
+    window.addEventListener("pointermove", onWindowPointerMove, { passive: false });
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerUp);
 
     return () => {
       cancelLongPress();
       resizeObserver.disconnect();
+      handleBtn?.removeEventListener("pointerdown", onHandleDown);
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
 
   // Reflect drawing mode on the map cursor
   useEffect(() => {
@@ -742,48 +755,12 @@ export function ShapeSwapMap() {
     else map.once("load", apply);
   }, [originalRing, overlayCenter, overlayRotation]);
 
-  // Rotate handle geometry
+  // Keep the rotate handle glued to the shape when React state changes
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const apply = () => {
-      const src = map.getSource("handle") as maplibregl.GeoJSONSource | undefined;
-      if (!src) return;
-      const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-      if (!activeShape || !originalRing || originalRing.length < 3) {
-        src.setData(empty);
-        return;
-      }
-      const ring =
-        activeShape === "overlay"
-          ? overlayCenter
-            ? computeOverlayRing(originalRing, overlayCenter, overlayRotation)
-            : null
-          : originalRing;
-      if (!ring) {
-        src.setData(empty);
-        return;
-      }
-      const { center, handle } = handlePosition(ring);
-      src.setData({
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: { type: "LineString", coordinates: [center, handle] },
-            properties: {},
-          },
-          {
-            type: "Feature",
-            geometry: { type: "Point", coordinates: handle },
-            properties: {},
-          },
-        ],
-      });
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
+    mapRef.current?.triggerRepaint();
   }, [activeShape, originalRing, overlayCenter, overlayRotation]);
+
+
 
 
   // Persist original polygon
@@ -851,7 +828,7 @@ export function ShapeSwapMap() {
     const map = mapRef.current;
     if (map) {
       const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-      for (const id of ["original", "overlay", "drawing", "handle"] as const) {
+      for (const id of ["original", "overlay", "drawing"] as const) {
         const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
         if (src) src.setData(empty);
       }
@@ -888,6 +865,25 @@ export function ShapeSwapMap() {
         className="absolute inset-0"
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
+
+      {/* Rotate handle, screen-anchored just above the active shape */}
+      <div
+        ref={handleElRef}
+        className="pointer-events-none absolute left-0 top-0 z-10"
+        style={{ display: "none" }}
+      >
+        <div className="absolute bottom-0 left-0 h-[26px] w-px -translate-x-1/2 bg-foreground/50" />
+        <button
+          ref={handleBtnRef}
+          type="button"
+          aria-label="Rotate shape"
+          title="Drag to rotate"
+          className="pointer-events-auto absolute bottom-[26px] left-0 flex h-9 w-9 -translate-x-1/2 touch-none items-center justify-center rounded-full bg-background text-foreground shadow-lg ring-1 ring-black/15 active:bg-accent"
+        >
+          <RotateCw size={16} />
+        </button>
+      </div>
+
 
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
@@ -1081,7 +1077,7 @@ export function ShapeSwapMap() {
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
                 {activeShape
-                  ? "Drag to move it, or drag the round handle to rotate. Tap the map to release."
+                  ? "Drag to move it, or drag the ↻ button above it to rotate. Tap the map to release."
                   : overlayCenter
                     ? "Long-press any shape to drag or rotate it, or search a new place."
                     : "Now search a place above to overlay your shape there."}
