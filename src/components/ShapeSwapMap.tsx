@@ -141,6 +141,8 @@ export function ShapeSwapMap() {
     baseRing: LngLat[];
     baseRotation: number;
   } | null>(null);
+  const handleElRef = useRef<HTMLDivElement>(null);
+  const handleBtnRef = useRef<HTMLButtonElement>(null);
 
   const [isDragging, setIsDragging] = useState(false);
   useEffect(() => {
