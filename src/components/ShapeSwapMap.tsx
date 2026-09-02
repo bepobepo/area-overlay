@@ -503,35 +503,8 @@ export function ShapeSwapMap() {
       }
       if (modeRef.current !== "locked") return;
 
-      // 1) Rotate handle takes priority when a shape is active.
-      const active = activeShapeRef.current;
-      if (active) {
-        const pad = 16;
-        const handleHits = map.queryRenderedFeatures(
-          [
-            [point.x - pad, point.y - pad],
-            [point.x + pad, point.y + pad],
-          ] as unknown as [maplibregl.PointLike, maplibregl.PointLike],
-          { layers: ["handle-point"] },
-        );
-        if (handleHits.length > 0) {
-          const ring = currentRing(active);
-          if (ring) {
-            const pivot = ringCentroid(ring);
-            rotatingRef.current = true;
-            rotateStartRef.current = {
-              pivot,
-              startBearing: turf.bearing(pivot, [lngLat.lng, lngLat.lat]),
-              baseRing: originalRingRef.current ?? ring,
-              baseRotation: active === "overlay" ? overlayRotationRef.current : 0,
-            };
-            dragTargetRef.current = active;
-            map.dragPan.disable();
-            map.getCanvas().style.cursor = "grabbing";
-            return;
-          }
-        }
-      }
+      // Rotation is started by the DOM rotate handle (see below), not here.
+
 
       const layers: string[] = [];
       if (overlayCenterRef.current) layers.push("overlay-fill");
