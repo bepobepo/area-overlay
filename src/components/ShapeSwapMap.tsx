@@ -592,14 +592,84 @@ export function ShapeSwapMap() {
     map.on("touchend", endDrag);
     map.on("touchcancel", endDrag);
 
+    // --- Rotate handle (DOM overlay, screen-anchored above the shape) ---
+    const positionRotateHandle = () => {
+      const el = handleElRef.current;
+      if (!el) return;
+      const active = activeShapeRef.current;
+      const ring = active ? currentRing(active) : null;
+      if (!ring || ring.length < 3) {
+        el.style.display = "none";
+        return;
+      }
+      let minY = Infinity;
+      let sumX = 0;
+      for (const c of ring) {
+        const p = map.project(c);
+        if (p.y < minY) minY = p.y;
+        sumX += p.x;
+      }
+      el.style.display = "block";
+      el.style.transform = `translate(${sumX / ring.length}px, ${minY}px)`;
+    };
+    map.on("render", positionRotateHandle);
+
+    const pointerToMap = (clientX: number, clientY: number) => {
+      const rect = map.getCanvas().getBoundingClientRect();
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      const ll = map.unproject([x, y]);
+      return { point: { x, y }, lngLat: { lng: ll.lng, lat: ll.lat } };
+    };
+
+    const onHandleDown = (ev: PointerEvent) => {
+      const active = activeShapeRef.current;
+      if (!active) return;
+      const ring = currentRing(active);
+      if (!ring) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const { lngLat } = pointerToMap(ev.clientX, ev.clientY);
+      const pivot = ringCentroid(ring);
+      rotatingRef.current = true;
+      rotateStartRef.current = {
+        pivot,
+        startBearing: turf.bearing(pivot, [lngLat.lng, lngLat.lat]),
+        baseRing: originalRingRef.current ?? ring,
+        baseRotation: active === "overlay" ? overlayRotationRef.current : 0,
+      };
+      dragTargetRef.current = active;
+      map.dragPan.disable();
+    };
+
+    const onWindowPointerMove = (ev: PointerEvent) => {
+      if (!rotatingRef.current) return;
+      ev.preventDefault();
+      const { point, lngLat } = pointerToMap(ev.clientX, ev.clientY);
+      handlePressMove(point, lngLat);
+    };
+    const onWindowPointerUp = () => {
+      if (rotatingRef.current) endDrag();
+    };
+
+    const handleBtn = handleBtnRef.current;
+    handleBtn?.addEventListener("pointerdown", onHandleDown);
+    window.addEventListener("pointermove", onWindowPointerMove, { passive: false });
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerUp);
 
     return () => {
       cancelLongPress();
       resizeObserver.disconnect();
+      handleBtn?.removeEventListener("pointerdown", onHandleDown);
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
 
   // Reflect drawing mode on the map cursor
   useEffect(() => {
