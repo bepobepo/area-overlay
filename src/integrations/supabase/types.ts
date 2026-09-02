@@ -14,7 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      disaster_searches: {
+        Row: {
+          events: Json
+          fetched_at: string
+          filter_type: string
+          id: string
+          ny_day: string
+          query_key: string
+        }
+        Insert: {
+          events: Json
+          fetched_at?: string
+          filter_type: string
+          id?: string
+          ny_day?: string
+          query_key?: string
+        }
+        Update: {
+          events?: Json
+          fetched_at?: string
+          filter_type?: string
+          id?: string
+          ny_day?: string
+          query_key?: string
+        }
+        Relationships: []
+      }
+      job_state: {
+        Row: {
+          job: string
+          last_ny_day: string | null
+          last_run_at: string | null
+          lease_until: string | null
+          paused_reason: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          job: string
+          last_ny_day?: string | null
+          last_run_at?: string | null
+          lease_until?: string | null
+          paused_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          job?: string
+          last_ny_day?: string | null
+          last_run_at?: string | null
+          lease_until?: string | null
+          paused_reason?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
