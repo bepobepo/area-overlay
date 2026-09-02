@@ -94,19 +94,8 @@ function blobForArea(areaM2: number, center: LngLat, seed = 1): LngLat[] {
   return metersPolygonToLngLat(pts, center);
 }
 
-/** Position of the rotate handle: due north of the shape, just outside it. */
-function handlePosition(ring: LngLat[]): { center: LngLat; handle: LngLat } {
-  const center = ringCentroid(ring);
-  let maxKm = 0;
-  for (const pt of ring) {
-    const d = turf.distance(center, pt, { units: "kilometers" });
-    if (d > maxKm) maxKm = d;
-  }
-  const distKm = maxKm * 1.18 + 0.01;
-  const handle = turf.destination(center, distKm, 0, { units: "kilometers" }).geometry
-    .coordinates as LngLat;
-  return { center, handle };
-}
+
+
 
 
 
