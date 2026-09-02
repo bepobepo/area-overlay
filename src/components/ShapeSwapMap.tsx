@@ -865,6 +865,25 @@ export function ShapeSwapMap() {
         style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
       />
 
+      {/* Rotate handle, screen-anchored just above the active shape */}
+      <div
+        ref={handleElRef}
+        className="pointer-events-none absolute left-0 top-0 z-10"
+        style={{ display: "none" }}
+      >
+        <div className="absolute bottom-0 left-0 h-[26px] w-px -translate-x-1/2 bg-foreground/50" />
+        <button
+          ref={handleBtnRef}
+          type="button"
+          aria-label="Rotate shape"
+          title="Drag to rotate"
+          className="pointer-events-auto absolute bottom-[26px] left-0 flex h-9 w-9 -translate-x-1/2 touch-none items-center justify-center rounded-full bg-background text-foreground shadow-lg ring-1 ring-black/15 active:bg-accent"
+        >
+          <RotateCw size={16} />
+        </button>
+      </div>
+
+
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="relative rounded-2xl bg-background/85 backdrop-blur-md shadow-lg ring-1 ring-black/10">
