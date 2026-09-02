@@ -1303,6 +1303,30 @@ export function ShapeSwapMap() {
                   ))}
                 </div>
 
+                {(newsFetchedAt || newsLoading) && (
+                  <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                    <span>
+                      {newsFetchedAt
+                        ? `Updated ${new Date(newsFetchedAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit",
+                          })}${newsStale ? " · may be out of date" : ""}`
+                        : "Loading…"}
+                    </span>
+                    <button
+                      onClick={() => void loadNews(newsType, true)}
+                      disabled={newsLoading}
+                      className="underline underline-offset-2 hover:text-foreground disabled:opacity-50"
+                    >
+                      Refresh
+                    </button>
+                  </div>
+                )}
+
+
+
                 <div className="flex-1 overflow-y-auto -mx-1 px-1">
                   {newsLoading && (
                     <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
