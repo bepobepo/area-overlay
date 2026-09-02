@@ -742,48 +742,12 @@ export function ShapeSwapMap() {
     else map.once("load", apply);
   }, [originalRing, overlayCenter, overlayRotation]);
 
-  // Rotate handle geometry
+  // Keep the rotate handle glued to the shape when React state changes
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const apply = () => {
-      const src = map.getSource("handle") as maplibregl.GeoJSONSource | undefined;
-      if (!src) return;
-      const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-      if (!activeShape || !originalRing || originalRing.length < 3) {
-        src.setData(empty);
-        return;
-      }
-      const ring =
-        activeShape === "overlay"
-          ? overlayCenter
-            ? computeOverlayRing(originalRing, overlayCenter, overlayRotation)
-            : null
-          : originalRing;
-      if (!ring) {
-        src.setData(empty);
-        return;
-      }
-      const { center, handle } = handlePosition(ring);
-      src.setData({
-        type: "FeatureCollection",
-        features: [
-          {
-            type: "Feature",
-            geometry: { type: "LineString", coordinates: [center, handle] },
-            properties: {},
-          },
-          {
-            type: "Feature",
-            geometry: { type: "Point", coordinates: handle },
-            properties: {},
-          },
-        ],
-      });
-    };
-    if (map.isStyleLoaded()) apply();
-    else map.once("load", apply);
+    mapRef.current?.triggerRepaint();
   }, [activeShape, originalRing, overlayCenter, overlayRotation]);
+
+
 
 
   // Persist original polygon
