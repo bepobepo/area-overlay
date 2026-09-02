@@ -243,13 +243,15 @@ export function ShapeSwapMap() {
   }, [aiDescription, genShape]);
 
   const loadNews = useCallback(
-    async (type: typeof newsType) => {
+    async (type: typeof newsType, force = false) => {
       setNewsLoading(true);
       setNewsError(null);
       setNewsEvents([]);
       try {
-        const events = await findDisasters({ data: { type } });
-        setNewsEvents(events);
+        const result = await findDisasters({ data: { type, force } });
+        setNewsEvents(result.events);
+        setNewsFetchedAt(result.fetched_at);
+        setNewsStale(result.stale);
       } catch (e) {
         setNewsError(e instanceof Error ? e.message : "Something went wrong");
       } finally {
@@ -258,6 +260,7 @@ export function ShapeSwapMap() {
     },
     [findDisasters],
   );
+
 
   const pickDisaster = useCallback((e: DisasterEvent) => {
     const map = mapRef.current;
