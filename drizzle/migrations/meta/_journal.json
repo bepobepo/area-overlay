@@ -15,6 +15,13 @@
       "when": 1788369916257,
       "tag": "0001_add_cron_token_to_job_state",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788369950186,
+      "tag": "0002_enable_cron_and_net",
+      "breakpoints": true
     }
   ]
 }
