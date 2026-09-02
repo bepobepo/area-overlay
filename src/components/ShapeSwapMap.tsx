@@ -1077,7 +1077,7 @@ export function ShapeSwapMap() {
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
                 {activeShape
-                  ? "Drag to move it, or drag the round handle to rotate. Tap the map to release."
+                  ? "Drag to move it, or drag the ↻ button above it to rotate. Tap the map to release."
                   : overlayCenter
                     ? "Long-press any shape to drag or rotate it, or search a new place."
                     : "Now search a place above to overlay your shape there."}
