@@ -1,12 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { authenticateCronRequest } from "@/integrations/supabase/cron-auth";
 
 export const Route = createFileRoute("/api/public/refresh-disasters")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const denied = await authenticateCronRequest(request);
-        if (denied) return denied;
+        const secret = process.env["DISASTER_CRON_SECRET"];
+        if (!secret) {
+          return new Response("Server configuration error", { status: 500 });
+        }
+        const provided = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
+        if (provided !== secret) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
 
         const { refreshDisasterPresets } = await import("@/lib/disaster-news.server");
         try {
