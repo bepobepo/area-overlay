@@ -815,7 +815,7 @@ export function ShapeSwapMap() {
     const map = mapRef.current;
     if (map) {
       const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
-      for (const id of ["original", "overlay", "drawing", "handle"] as const) {
+      for (const id of ["original", "overlay", "drawing"] as const) {
         const src = map.getSource(id) as maplibregl.GeoJSONSource | undefined;
         if (src) src.setData(empty);
       }
