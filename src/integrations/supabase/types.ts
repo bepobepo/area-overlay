@@ -43,6 +43,7 @@ export type Database = {
       }
       job_state: {
         Row: {
+          cron_token: string
           job: string
           last_ny_day: string | null
           last_run_at: string | null
@@ -52,6 +53,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          cron_token?: string
           job: string
           last_ny_day?: string | null
           last_run_at?: string | null
@@ -61,6 +63,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          cron_token?: string
           job?: string
           last_ny_day?: string | null
           last_run_at?: string | null

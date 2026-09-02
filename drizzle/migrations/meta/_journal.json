@@ -8,6 +8,13 @@
       "when": 1788369648435,
       "tag": "0000_disaster_search_cache",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788369916257,
+      "tag": "0001_add_cron_token_to_job_state",
+      "breakpoints": true
     }
   ]
 }
