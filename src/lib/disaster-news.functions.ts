@@ -45,6 +45,7 @@ export const AREA_UNIT_TO_M2: Record<DisasterEvent["area_unit"], number> = {
 };
 
 export function eventAreaM2(e: Pick<DisasterEvent, "area_value" | "area_unit">): number {
+  if (e.area_value == null || !Number.isFinite(e.area_value)) return 0;
   return e.area_value * (AREA_UNIT_TO_M2[e.area_unit] ?? 1);
 }
 
