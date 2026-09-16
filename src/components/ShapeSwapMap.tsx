@@ -267,6 +267,7 @@ export function ShapeSwapMap() {
   const pickDisaster = useCallback((e: DisasterEvent) => {
     const map = mapRef.current;
     if (!map) return;
+    if (e.area_value == null) return;
     const center: LngLat = [e.lon, e.lat];
     const ring = blobForArea(eventAreaM2(e), center, e.title.length % 7);
     setOriginalRing(ring);
