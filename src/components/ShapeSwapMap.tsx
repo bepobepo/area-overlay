@@ -1372,13 +1372,19 @@ export function ShapeSwapMap() {
                           {e.place}
                           {e.country ? `, ${e.country}` : ""} · {e.date}
                         </div>
-                        <div className="text-xs mt-1 font-medium text-amber-700">
-                          {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
-                          {formatArea(eventAreaM2(e))}
-                        </div>
+                        {e.area_value != null ? (
+                          <div className="text-xs mt-1 font-medium text-amber-700">
+                            {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
+                            {formatArea(eventAreaM2(e))}
+                          </div>
+                        ) : (
+                          <div className="text-xs mt-1 text-muted-foreground italic">
+                            Affected area not reported — tap the i for details
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground mt-1">{e.summary}</div>
                         <div className="text-[10px] text-muted-foreground mt-1">
-                          Reported estimate
+                          Reported figure
                           {e.source && e.source !== "unknown" ? ` · ${e.source}` : ""}
                         </div>
                       </div>
