@@ -1279,8 +1279,8 @@ export function ShapeSwapMap() {
               <>
                 <p className="text-xs text-muted-foreground">
                   Pick a recent event to draw its reported affected area on the map, then compare it
-                  anywhere else. Newest events first — coverage depends on the AI's knowledge, so
-                  the very latest events may be missing.
+                  anywhere else. Newest first, from ReliefWeb situation reports and GDACS satellite
+                  alerts.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {(
