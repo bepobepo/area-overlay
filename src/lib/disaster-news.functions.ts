@@ -7,12 +7,15 @@ export type DisasterEvent = {
   country: string;
   date: string;
   type: string;
-  area_value: number;
+  /** Null when no affected-area figure was reported. */
+  area_value: number | null;
   area_unit: "hectares" | "km2" | "acres" | "m2" | "sq_mi";
   lat: number;
   lon: number;
   summary: string;
   source: string;
+  /** Link to the original report. */
+  url: string;
   details: string;
   people_affected: number | null;
   people_affected_note: string;
