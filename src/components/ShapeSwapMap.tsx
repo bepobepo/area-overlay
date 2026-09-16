@@ -1234,9 +1234,18 @@ export function ShapeSwapMap() {
                 <dl className="mt-3 space-y-1.5 text-xs">
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Affected area</dt>
-                    <dd className="font-medium text-amber-700 text-right">
-                      {detailEvent.area_value.toLocaleString()} {detailEvent.area_unit} ·{" "}
-                      {formatArea(eventAreaM2(detailEvent))}
+                    <dd
+                      className={
+                        detailEvent.area_value != null
+                          ? "font-medium text-amber-700 text-right"
+                          : "text-right text-muted-foreground"
+                      }
+                    >
+                      {detailEvent.area_value != null
+                        ? `${detailEvent.area_value.toLocaleString()} ${detailEvent.area_unit} · ${formatArea(
+                            eventAreaM2(detailEvent),
+                          )}`
+                        : "Not reported"}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
@@ -1261,18 +1270,35 @@ export function ShapeSwapMap() {
                     </dd>
                   </div>
                 </dl>
-                <button
-                  onClick={() => {
-                    const e = detailEvent;
-                    setDetailEvent(null);
-                    pickDisaster(e);
-                  }}
-                  className="mt-4 w-full rounded-xl bg-amber-600 text-white text-sm font-medium py-2.5"
-                >
-                  Draw this area on the map
-                </button>
+                {detailEvent.url && (
+                  <a
+                    href={detailEvent.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-block text-xs text-cyan-700 underline"
+                  >
+                    Read the original report ↗
+                  </a>
+                )}
+                {detailEvent.area_value != null ? (
+                  <button
+                    onClick={() => {
+                      const e = detailEvent;
+                      setDetailEvent(null);
+                      pickDisaster(e);
+                    }}
+                    className="mt-4 w-full rounded-xl bg-amber-600 text-white text-sm font-medium py-2.5"
+                  >
+                    Draw this area on the map
+                  </button>
+                ) : (
+                  <p className="mt-4 rounded-xl bg-muted text-muted-foreground text-xs py-2.5 px-3 text-center">
+                    No affected-area figure has been reported yet, so this one can't be drawn on the
+                    map.
+                  </p>
+                )}
                 <p className="text-[10px] text-muted-foreground mt-2">
-                  Figures are reported estimates.
+                  Figures are as reported in the original source.
                 </p>
               </div>
             ) : (
