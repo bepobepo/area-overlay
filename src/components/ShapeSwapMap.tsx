@@ -1305,13 +1305,12 @@ export function ShapeSwapMap() {
               <>
                 <p className="text-xs text-muted-foreground">
                   Pick a recent event to draw its reported affected area on the map, then compare it
-                  anywhere else. Newest first, from ReliefWeb situation reports and GDACS satellite
-                  alerts.
+                  anywhere else. Newest first, from GDACS — the global disaster alert system run by
+                  the EU and UN, with satellite-mapped affected areas.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {(
-                    ["any", "wildfire", "flood", "hurricane", "landslide", "earthquake"] as const
-                  ).map((t) => (
+                  {(["any", "flood", "wildfire", "hurricane", "earthquake"] as const).map((t) => (
+
                     <button
                       key={t}
                       onClick={() => {
