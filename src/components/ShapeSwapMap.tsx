@@ -267,6 +267,7 @@ export function ShapeSwapMap() {
   const pickDisaster = useCallback((e: DisasterEvent) => {
     const map = mapRef.current;
     if (!map) return;
+    if (e.area_value == null) return;
     const center: LngLat = [e.lon, e.lat];
     const ring = blobForArea(eventAreaM2(e), center, e.title.length % 7);
     setOriginalRing(ring);
@@ -1233,9 +1234,18 @@ export function ShapeSwapMap() {
                 <dl className="mt-3 space-y-1.5 text-xs">
                   <div className="flex justify-between gap-3">
                     <dt className="text-muted-foreground">Affected area</dt>
-                    <dd className="font-medium text-amber-700 text-right">
-                      {detailEvent.area_value.toLocaleString()} {detailEvent.area_unit} ·{" "}
-                      {formatArea(eventAreaM2(detailEvent))}
+                    <dd
+                      className={
+                        detailEvent.area_value != null
+                          ? "font-medium text-amber-700 text-right"
+                          : "text-right text-muted-foreground"
+                      }
+                    >
+                      {detailEvent.area_value != null
+                        ? `${detailEvent.area_value.toLocaleString()} ${detailEvent.area_unit} · ${formatArea(
+                            eventAreaM2(detailEvent),
+                          )}`
+                        : "Not reported"}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-3">
@@ -1260,26 +1270,43 @@ export function ShapeSwapMap() {
                     </dd>
                   </div>
                 </dl>
-                <button
-                  onClick={() => {
-                    const e = detailEvent;
-                    setDetailEvent(null);
-                    pickDisaster(e);
-                  }}
-                  className="mt-4 w-full rounded-xl bg-amber-600 text-white text-sm font-medium py-2.5"
-                >
-                  Draw this area on the map
-                </button>
+                {detailEvent.url && (
+                  <a
+                    href={detailEvent.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-block text-xs text-cyan-700 underline"
+                  >
+                    Read the original report ↗
+                  </a>
+                )}
+                {detailEvent.area_value != null ? (
+                  <button
+                    onClick={() => {
+                      const e = detailEvent;
+                      setDetailEvent(null);
+                      pickDisaster(e);
+                    }}
+                    className="mt-4 w-full rounded-xl bg-amber-600 text-white text-sm font-medium py-2.5"
+                  >
+                    Draw this area on the map
+                  </button>
+                ) : (
+                  <p className="mt-4 rounded-xl bg-muted text-muted-foreground text-xs py-2.5 px-3 text-center">
+                    No affected-area figure has been reported yet, so this one can't be drawn on the
+                    map.
+                  </p>
+                )}
                 <p className="text-[10px] text-muted-foreground mt-2">
-                  Figures are reported estimates.
+                  Figures are as reported in the original source.
                 </p>
               </div>
             ) : (
               <>
                 <p className="text-xs text-muted-foreground">
                   Pick a recent event to draw its reported affected area on the map, then compare it
-                  anywhere else. Newest events first — coverage depends on the AI's knowledge, so
-                  the very latest events may be missing.
+                  anywhere else. Newest first, from ReliefWeb situation reports and GDACS satellite
+                  alerts.
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {(
@@ -1371,13 +1398,19 @@ export function ShapeSwapMap() {
                           {e.place}
                           {e.country ? `, ${e.country}` : ""} · {e.date}
                         </div>
-                        <div className="text-xs mt-1 font-medium text-amber-700">
-                          {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
-                          {formatArea(eventAreaM2(e))}
-                        </div>
+                        {e.area_value != null ? (
+                          <div className="text-xs mt-1 font-medium text-amber-700">
+                            {e.area_value.toLocaleString()} {e.area_unit} affected ·{" "}
+                            {formatArea(eventAreaM2(e))}
+                          </div>
+                        ) : (
+                          <div className="text-xs mt-1 text-muted-foreground italic">
+                            Affected area not reported — tap the i for details
+                          </div>
+                        )}
                         <div className="text-xs text-muted-foreground mt-1">{e.summary}</div>
                         <div className="text-[10px] text-muted-foreground mt-1">
-                          Reported estimate
+                          Reported figure
                           {e.source && e.source !== "unknown" ? ` · ${e.source}` : ""}
                         </div>
                       </div>
