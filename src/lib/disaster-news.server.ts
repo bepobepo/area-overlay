@@ -1,5 +1,7 @@
-// Server-only disaster logic: real reports from ReliefWeb + GDACS, AI used only
-// to extract figures from the reported text. Persistent daily cache on top.
+// Server-only disaster logic. Events come from GDACS (the Global Disaster Alert
+// and Coordination System run by the EU JRC and UN OCHA): real, current events
+// with satellite-derived affected-area footprints. No figures are invented.
+import * as turf from "@turf/turf";
 import {
   dateSortKey,
   eventAreaM2,
@@ -36,372 +38,249 @@ export function normalizeQueryKey(query?: string | null): string {
   return (query ?? "").trim().toLowerCase().slice(0, 200);
 }
 
-export class AiGatewayError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+const UA = "area-compare/1.0 (+https://area-compare.lovable.app)";
 
-// ------------------------------------------------------------- classification
-
-export function classify(text: string, glide?: string): DisasterFilter | "other" {
-  const g = (glide ?? "").toUpperCase();
-  if (/^(FL|FF)-/.test(g)) return "flood";
-  if (/^(TC|ST)-/.test(g)) return "hurricane";
-  if (/^WF-/.test(g)) return "wildfire";
-  if (/^EQ-/.test(g)) return "earthquake";
-  if (/^(LS|MS|AV)-/.test(g)) return "landslide";
-
-  const t = text.toLowerCase();
-  if (/wild ?fire|forest fire|bush ?fire|fires\b/.test(t)) return "wildfire";
-  if (/flood|inundat/.test(t)) return "flood";
-  if (/hurricane|cyclone|typhoon|tropical storm|severe storm/.test(t)) return "hurricane";
-  if (/landslide|mudslide|mud slide|avalanche|debris flow/.test(t)) return "landslide";
-  if (/earthquake|quake|seismic/.test(t)) return "earthquake";
-  return "other";
-}
-
-// ------------------------------------------------------------------ ReliefWeb
-
-type RawItem = {
-  title: string;
-  url: string;
-  glide: string;
-  date: string;
-  text: string;
-  kind: DisasterFilter | "other";
+const TYPE_TO_FILTER: Record<string, DisasterFilter> = {
+  FL: "flood",
+  FF: "flood",
+  TC: "hurricane",
+  WF: "wildfire",
+  EQ: "earthquake",
+  LS: "landslide",
+  MS: "landslide",
 };
 
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;|&apos;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&");
-}
+// -------------------------------------------------------------- GDACS sources
 
-function stripTags(s: string): string {
-  return decodeEntities(decodeEntities(s).replace(/<[^>]*>/g, " "))
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/** Recent tracked disasters from ReliefWeb's public feed (no API key needed). */
-export async function fetchReliefWeb(): Promise<RawItem[]> {
-  const res = await fetch("https://reliefweb.int/disasters/rss.xml", {
-    headers: { "User-Agent": "area-compare (lovable app)" },
-  });
-  if (!res.ok) throw new Error(`ReliefWeb feed error ${res.status}`);
-  const xml = await res.text();
-
-  const items = xml.match(/<item>[\s\S]*?<\/item>/g) ?? [];
-  const out: RawItem[] = [];
-  for (const item of items) {
-    const title = stripTags(/<title>([\s\S]*?)<\/title>/.exec(item)?.[1] ?? "");
-    const url = stripTags(/<link>([\s\S]*?)<\/link>/.exec(item)?.[1] ?? "");
-    const pub = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(item)?.[1] ?? "";
-    const desc = stripTags(/<description>([\s\S]*?)<\/description>/.exec(item)?.[1] ?? "");
-    const glide =
-      /(?:^|[^A-Z])((?:FL|FF|TC|ST|WF|EQ|LS|MS|AV|DR|VO|EP|TS|CE|OT)-\d{4}-\d{6}-[A-Z]{3})/.exec(
-        desc + " " + item,
-      )?.[1] ?? "";
-    if (!title || !url) continue;
-    const parsed = pub ? new Date(pub) : null;
-    out.push({
-      title,
-      url,
-      glide,
-      date:
-        parsed && !Number.isNaN(parsed.getTime())
-          ? parsed.toISOString().slice(0, 10)
-          : new Date().toISOString().slice(0, 10),
-      text: desc.slice(0, 3500),
-      kind: classify(`${title} ${desc.slice(0, 400)}`, glide),
-    });
-  }
-  return out;
-}
-
-// ----------------------------------------------------------------------- GDACS
+type GdacsProps = {
+  eventtype?: string;
+  eventid?: number;
+  episodeid?: number;
+  glide?: string;
+  name?: string;
+  description?: string;
+  htmldescription?: string;
+  country?: string;
+  fromdate?: string;
+  todate?: string;
+  alertlevel?: string;
+  iso3?: string;
+  polygonlabel?: string;
+  url?: { report?: string; geometry?: string };
+  severitydata?: { severity?: number; severityunit?: string; severitytext?: string };
+};
 
 type GdacsFeature = {
-  geometry?: { coordinates?: [number, number] };
-  properties?: {
-    eventtype?: string;
-    name?: string;
-    country?: string;
-    fromdate?: string;
-    url?: { report?: string };
-    severitydata?: { severity?: number; severityunit?: string; severitytext?: string };
-  };
+  geometry?: { type?: string; coordinates?: unknown };
+  properties?: GdacsProps;
 };
+
+async function gdacsJson(url: string): Promise<{ features?: GdacsFeature[] }> {
+  const res = await fetch(url, { headers: { "User-Agent": UA, Accept: "application/json" } });
+  if (!res.ok) throw new Error(`GDACS error ${res.status}`);
+  return (await res.json()) as { features?: GdacsFeature[] };
+}
 
 /**
- * Wildfires from GDACS: these come with a real burnt-area figure in hectares
- * and coordinates, so no AI is involved.
+ * GDACS caps each response at 100 events and daily wildfire alerts would fill
+ * that quota, so each event type is requested separately and merged.
  */
-export async function fetchGdacsWildfires(): Promise<DisasterEvent[]> {
-  const to = new Date();
-  const from = new Date(to.getTime() - 45 * 86_400_000);
-  const url =
-    `https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?fromDate=` +
-    `${from.toISOString().slice(0, 10)}&toDate=${to.toISOString().slice(0, 10)}` +
-    `&eventlist=WF&alertlevel=Green;Orange;Red`;
-  const res = await fetch(url, { headers: { "User-Agent": "area-compare (lovable app)" } });
-  if (!res.ok) throw new Error(`GDACS error ${res.status}`);
-  const json = (await res.json()) as { features?: GdacsFeature[] };
+async function fetchEventList(): Promise<GdacsFeature[]> {
+  const to = new Date().toISOString().slice(0, 10);
+  const from = new Date(Date.now() - 45 * 86_400_000).toISOString().slice(0, 10);
 
-  const events: DisasterEvent[] = [];
-  for (const f of json.features ?? []) {
-    const p = f.properties;
-    if (!p || p.eventtype !== "WF") continue;
-    const coords = f.geometry?.coordinates;
-    const ha = p.severitydata?.severity;
-    if (!coords || !Number.isFinite(ha) || !ha || ha < 100) continue;
-    const date = (p.fromdate ?? "").slice(0, 10) || new Date().toISOString().slice(0, 10);
-    events.push({
-      title: p.name ?? "Wildfire",
-      place: p.country ?? "",
-      country: p.country ?? "",
-      date,
-      type: "wildfire",
-      area_value: Math.round(ha),
-      area_unit: "hectares",
-      lat: coords[1],
-      lon: coords[0],
-      summary: p.severitydata?.severitytext ?? `${Math.round(ha).toLocaleString()} ha burnt`,
-      source: "GDACS / Copernicus EFFIS",
-      url: p.url?.report ?? "https://www.gdacs.org",
-      details:
-        `Satellite-detected burnt area of about ${Math.round(ha).toLocaleString()} hectares ` +
-        `in ${p.country ?? "the affected area"}, recorded from ${date} by the Global Disaster ` +
-        `Alert and Coordination System.`,
-      people_affected: null,
-      people_affected_note: "",
-    });
+  const results = await Promise.allSettled(
+    ["FL", "TC", "EQ", "WF"].map((t) =>
+      gdacsJson(
+        "https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?" +
+          `fromDate=${from}&toDate=${to}&eventlist=${t}&alertlevel=Green;Orange;Red`,
+      ),
+    ),
+  );
+
+  const byId = new Map<string, GdacsFeature>();
+  let ok = 0;
+  for (const r of results) {
+    if (r.status !== "fulfilled") continue;
+    ok += 1;
+    for (const f of r.value.features ?? []) {
+      const p = f.properties ?? {};
+      byId.set(`${p.eventtype}-${p.eventid}`, f);
+    }
   }
-  events.sort((a, b) => (b.area_value ?? 0) - (a.area_value ?? 0));
-  return events.slice(0, 12);
+  if (ok === 0) throw new Error("GDACS unavailable");
+  return [...byId.values()];
 }
 
-// -------------------------------------------------------------- AI extraction
 
-const EXTRACT_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    events: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          index: { type: "number" },
-          place: { type: "string" },
-          country: { type: "string" },
-          lat: { type: "number" },
-          lon: { type: "number" },
-          area_value: { type: ["number", "null"] },
-          area_unit: { type: "string", enum: ["hectares", "km2", "acres", "m2", "sq_mi"] },
-          people_affected: { type: ["number", "null"] },
-          people_affected_note: { type: "string" },
-          summary: { type: "string" },
-          details: { type: "string" },
-          source: { type: "string" },
-        },
-        required: [
-          "index",
-          "place",
-          "country",
-          "lat",
-          "lon",
-          "area_value",
-          "area_unit",
-          "people_affected",
-          "people_affected_note",
-          "summary",
-          "details",
-          "source",
-        ],
-      },
-    },
-  },
-  required: ["events"],
-} as const;
 
-type Extracted = {
-  index: number;
-  place: string;
-  country: string;
-  lat: number;
-  lon: number;
-  area_value: number | null;
-  area_unit: DisasterEvent["area_unit"];
-  people_affected: number | null;
-  people_affected_note: string;
-  summary: string;
-  details: string;
-  source: string;
-};
-
-/** Pulls figures out of the reported text. Never invents numbers. */
-async function extractFromReports(items: RawItem[]): Promise<Extracted[]> {
-  const key = process.env["LOVABLE_API_KEY"];
-  if (!key) throw new Error("LOVABLE_API_KEY not configured");
-
-  const payload = items.map((it, i) => ({
-    index: i,
-    title: it.title,
-    glide: it.glide,
-    date: it.date,
-    report: it.text,
-  }));
-
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Lovable-API-Key": key },
-    body: JSON.stringify({
-      model: "google/gemini-3-flash-preview",
-      messages: [
-        {
-          role: "system",
-          content: `You extract facts from official disaster situation reports. You NEVER invent or estimate figures.
-
-For each numbered report return one object:
-- place: the affected region named in the report (e.g. "Luzon and Metro Manila").
-- country: the affected country.
-- lat/lon: approximate geographic centre of the affected region. This is the only value you may infer from geography.
-- area_value + area_unit: the affected/flooded/burnt/damaged AREA figure stated in the report text. If the report states no area figure, area_value MUST be null (still give any unit, it is ignored).
-- people_affected: the number of people affected/displaced/killed stated in the report, else null. Prefer the largest "affected" figure.
-- people_affected_note: what that number counts, e.g. "affected", "displaced", "killed". "" when null.
-- summary: one short factual sentence.
-- details: 2-3 factual sentences drawn only from the report.
-- source: the reporting body named in the report (e.g. "NDRRMC", "IFRC", "OCHA"), else "ReliefWeb".
-
-Every figure you output must appear in the report text. Use null rather than a guess.`,
-        },
-        { role: "user", content: JSON.stringify(payload) },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "extraction", strict: true, schema: EXTRACT_SCHEMA },
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    if (res.status === 429) throw new AiGatewayError(429, "Rate limit reached. Try again shortly.");
-    if (res.status === 402)
-      throw new AiGatewayError(402, "AI credits exhausted. Add credits in workspace settings.");
-    if (res.status === 403)
-      throw new AiGatewayError(403, "AI access is blocked for this workspace.");
-    throw new AiGatewayError(res.status, `AI gateway error ${res.status}: ${text.slice(0, 200)}`);
-  }
-
-  const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+/** Area of the satellite "Affected area" footprint, in m². Null when absent. */
+async function affectedAreaM2(p: GdacsProps): Promise<number | null> {
+  const geomUrl =
+    p.url?.geometry ??
+    `https://www.gdacs.org/gdacsapi/api/polygons/getgeometry?eventtype=${p.eventtype}&eventid=${p.eventid}&episodeid=${p.episodeid}`;
   try {
-    const parsed = JSON.parse(json.choices?.[0]?.message?.content ?? "") as { events?: Extracted[] };
-    return parsed.events ?? [];
+    const json = await gdacsJson(geomUrl);
+    let total = 0;
+    for (const f of json.features ?? []) {
+      const label = f.properties?.polygonlabel ?? "";
+      if (!/^Affected area$/i.test(label)) continue;
+      if (f.geometry?.type !== "Polygon" && f.geometry?.type !== "MultiPolygon") continue;
+      total += turf.area(f as unknown as turf.AllGeoJSON);
+    }
+    return total > 0 ? total : null;
   } catch {
-    throw new Error("Could not read the extracted report data");
+    return null;
   }
 }
 
-// -------------------------------------------------------------- event building
-
-function validArea(e: DisasterEvent): boolean {
-  if (e.area_value == null) return true;
-  if (!Number.isFinite(e.area_value) || e.area_value <= 0) return false;
-  return eventAreaM2(e) < 2_000_000_000_000;
+function niceArea(m2: number): { value: number; unit: DisasterEvent["area_unit"] } {
+  const km2 = m2 / 1_000_000;
+  if (km2 >= 10) return { value: Math.round(km2), unit: "km2" };
+  return { value: Math.round(m2 / 10_000), unit: "hectares" };
 }
 
-/** Builds the full, deduplicated, newest-first list from the real sources. */
+function reportLink(p: GdacsProps): string {
+  const glide = (p.glide ?? "").trim();
+  if (/^[A-Z]{2}-\d{4}-\d{6}-[A-Z]{3}$/.test(glide))
+    return `https://reliefweb.int/disaster/${glide.toLowerCase()}`;
+  return (
+    p.url?.report ??
+    `https://www.gdacs.org/report.aspx?eventid=${p.eventid}&eventtype=${p.eventtype}`
+  );
+}
+
+function keepEvent(p: GdacsProps): boolean {
+  const sev = p.severitydata?.severity ?? 0;
+  switch (p.eventtype) {
+    case "EQ":
+      // Only quakes big enough to be widely reported.
+      return sev >= 5.5;
+    case "WF":
+      return sev >= 100; // hectares burnt
+    default:
+      return true;
+  }
+}
+
+/** Short human line; GDACS reports "Magnitude 0" for events without a scale. */
+function cleanSummary(p: GdacsProps, filter: DisasterFilter): string {
+  const sev = (p.severitydata?.severitytext ?? "").trim();
+  if (sev && !/magnitude\s*0\b/i.test(sev)) return sev;
+  const alert = p.alertlevel ? `${p.alertlevel} alert` : "Monitored event";
+  return `${alert} — ${filter} in ${p.country || "an unnamed area"}`;
+}
+
+function describe(p: GdacsProps, areaText: string): string {
+  const where = p.country ?? "the affected area";
+  const when = (p.fromdate ?? "").slice(0, 10);
+  const sev = p.severitydata?.severitytext ? ` ${p.severitydata.severitytext}.` : "";
+  const alert = p.alertlevel ? `${p.alertlevel} alert level.` : "";
+  return (
+    `${p.name ?? "Event"} in ${where}, recorded from ${when}.${sev} ${areaText} ` +
+    `${alert} Monitored by GDACS, the Global Disaster Alert and Coordination System ` +
+    `(EU Joint Research Centre and UN OCHA).`
+  ).replace(/\s+/g, " ");
+}
+
+/** Builds the current, newest-first list of real events. */
 export async function buildAllEvents(): Promise<DisasterEvent[]> {
-  const [rwResult, gdacsResult] = await Promise.allSettled([
-    fetchReliefWeb(),
-    fetchGdacsWildfires(),
-  ]);
+  const features = await fetchEventList();
 
-  const gdacs = gdacsResult.status === "fulfilled" ? gdacsResult.value : [];
-  const raw = rwResult.status === "fulfilled" ? rwResult.value : [];
+  // Keep the newest events of each type, so daily wildfire alerts don't crowd
+  // out floods, storms and quakes.
+  const perType: Record<string, number> = { WF: 18, FL: 40, TC: 12, EQ: 12 };
+  const counts: Record<string, number> = {};
+  const candidates = features
+    .map((f) => ({ f, p: f.properties ?? {} }))
+    .filter(({ p }) => p.eventtype && TYPE_TO_FILTER[p.eventtype] && keepEvent(p))
+    .sort((a, b) => (b.p.fromdate ?? "").localeCompare(a.p.fromdate ?? ""))
+    .filter(({ p }) => {
+      const t = p.eventtype!;
+      counts[t] = (counts[t] ?? 0) + 1;
+      return counts[t] <= (perType[t] ?? 10);
+    });
 
-  let fromReports: DisasterEvent[] = [];
-  if (raw.length > 0) {
-    try {
-      const extracted = await extractFromReports(raw);
-      fromReports = extracted
-        .map((x) => {
-          const item = raw[x.index];
-          if (!item) return null;
-          const type = item.kind === "other" ? classify(item.title, item.glide) : item.kind;
-          const event: DisasterEvent = {
-            title: item.title,
-            place: x.place || x.country,
-            country: x.country,
-            date: item.date,
-            type: type === "other" ? "disaster" : type,
-            area_value:
-              x.area_value != null && Number.isFinite(x.area_value) && x.area_value > 0
-                ? x.area_value
-                : null,
-            area_unit: x.area_unit ?? "hectares",
-            lat: x.lat,
-            lon: x.lon,
-            summary: x.summary,
-            source: x.source || "ReliefWeb",
-            url: item.url,
-            details: x.details,
-            people_affected:
-              x.people_affected != null && Number.isFinite(x.people_affected)
-                ? x.people_affected
-                : null,
-            people_affected_note: x.people_affected_note ?? "",
-          };
-          return event;
-        })
-        .filter(
-          (e): e is DisasterEvent =>
-            !!e &&
-            Number.isFinite(e.lat) &&
-            Number.isFinite(e.lon) &&
-            Math.abs(e.lat) <= 90 &&
-            Math.abs(e.lon) <= 180 &&
-            validArea(e),
-        );
-    } catch (err) {
-      // No enrichment available: fall back to the sources that need none.
-      if (gdacs.length === 0) throw err;
+
+  console.log("cand", candidates.map((c) => c.p.eventtype).join(","));
+  const events: DisasterEvent[] = [];
+  const queue = [...candidates];
+
+  async function worker() {
+    for (;;) {
+      const next = queue.shift();
+      if (!next) return;
+      const { f, p } = next;
+      const filter = TYPE_TO_FILTER[p.eventtype!]!;
+      const coords = (f.geometry as { coordinates?: [number, number] } | undefined)?.coordinates;
+      const sev = p.severitydata?.severity ?? 0;
+
+      let area: { value: number; unit: DisasterEvent["area_unit"] } | null = null;
+      if (p.eventtype === "WF" && sev >= 100) {
+        area = { value: Math.round(sev), unit: "hectares" };
+      } else {
+        const m2 = await affectedAreaM2(p);
+        if (m2) area = niceArea(m2);
+      }
+
+      const areaText = area
+        ? `Mapped affected area of about ${area.value.toLocaleString()} ${
+            area.unit === "km2" ? "km²" : "hectares"
+          }.`
+        : "No affected-area footprint has been published for this event yet.";
+
+      const date = (p.fromdate ?? "").slice(0, 10) || nyDay();
+      events.push({
+        title: p.name || p.description || `${filter} in ${p.country ?? "unknown"}`,
+        place: p.country ?? "",
+        country: "",
+        date,
+        type: filter,
+        area_value: area?.value ?? null,
+        area_unit: area?.unit ?? "km2",
+        lat: Array.isArray(coords) ? Number(coords[1]) : NaN,
+        lon: Array.isArray(coords) ? Number(coords[0]) : NaN,
+        summary: cleanSummary(p, filter),
+        source: "GDACS (EU JRC / UN OCHA)",
+        url: reportLink(p),
+        details: describe(p, areaText),
+        people_affected: null,
+        people_affected_note: "",
+      });
     }
   }
 
-  const all = [...fromReports, ...gdacs];
-  const seen = new Set<string>();
-  const deduped = all.filter((e) => {
-    const k = `${e.title.toLowerCase()}|${e.date}`;
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
+  await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
 
-  deduped.sort((a, b) => {
+  const seen = new Set<string>();
+  const out = events.filter(
+    (e) =>
+      Number.isFinite(e.lat) &&
+      Number.isFinite(e.lon) &&
+      Math.abs(e.lat) <= 90 &&
+      Math.abs(e.lon) <= 180 &&
+      (e.area_value == null || (e.area_value > 0 && eventAreaM2(e) < 2_000_000_000_000)) &&
+      (() => {
+        const k = `${e.title.toLowerCase()}|${e.date}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      })(),
+  );
+
+  out.sort((a, b) => {
+    // Events with a measured footprint first within the same day.
     const d = dateSortKey(b.date) - dateSortKey(a.date);
     if (d !== 0) return d;
-    // Within the same day, drawable events first.
     return (b.area_value == null ? 0 : 1) - (a.area_value == null ? 0 : 1);
   });
 
-  if (deduped.length === 0) throw new Error("No recent disaster reports were available.");
-  return deduped;
+  if (out.length === 0) throw new Error("No current disaster events were available.");
+  return out;
 }
 
 function matchesFilter(e: DisasterEvent, type: DisasterFilter): boolean {
-  if (type === "any") return true;
-  return classify(`${e.type} ${e.title}`) === type;
+  return type === "any" || e.type === type;
 }
 
 function matchesQuery(e: DisasterEvent, query: string): boolean {
@@ -453,7 +332,7 @@ async function writeCache(type: DisasterFilter, queryKey: string, events: Disast
 
 /**
  * Returns cached events when they were built on the current New York day,
- * otherwise rebuilds from the live sources. Falls back to a stale row on error.
+ * otherwise rebuilds from the live source. Falls back to a stale row on error.
  */
 export async function getDisasters(
   type: DisasterFilter,
@@ -518,7 +397,7 @@ async function updateJobState(patch: Record<string, unknown>) {
     .eq("job", JOB);
 }
 
-/** Rebuilds every preset filter from one fetch of the live sources. */
+/** Rebuilds every preset filter from one fetch of the live source. */
 export async function refreshDisasterPresets(): Promise<{
   status: string;
   refreshed: string[];
@@ -528,7 +407,7 @@ export async function refreshDisasterPresets(): Promise<{
   const state = await readJobState();
   const today = nyDay();
 
-  if (state?.last_ny_day === today && state?.status !== "paused") {
+  if (state?.last_ny_day === today) {
     return { status: "already_fresh", refreshed: [], skipped: DISASTER_FILTERS };
   }
 
@@ -561,17 +440,8 @@ export async function refreshDisasterPresets(): Promise<{
     });
     return { status: "ok", refreshed, skipped: [] };
   } catch (err) {
-    const paused = err instanceof AiGatewayError && (err.status === 402 || err.status === 403);
-    await updateJobState({
-      status: paused ? "paused" : "idle",
-      paused_reason: paused && err instanceof Error ? err.message : null,
-      lease_until: null,
-    });
-    return {
-      status: paused ? "paused" : "error",
-      refreshed: [],
-      skipped: DISASTER_FILTERS,
-      reason: err instanceof Error ? err.message : "refresh failed",
-    };
+    const reason = err instanceof Error ? err.message : "refresh failed";
+    await updateJobState({ status: "idle", paused_reason: reason, lease_until: null });
+    return { status: "error", refreshed: [], skipped: DISASTER_FILTERS, reason };
   }
 }
