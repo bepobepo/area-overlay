@@ -1164,6 +1164,7 @@ export function ShapeSwapMap() {
                 <button
                   onClick={() => {
                     setAiError(null);
+                    setPendingShape(null);
                     setAiOpen(true);
                   }}
                   className="flex-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 active:bg-fuchsia-800 text-white font-medium py-3 text-sm transition inline-flex items-center justify-center gap-1.5"
