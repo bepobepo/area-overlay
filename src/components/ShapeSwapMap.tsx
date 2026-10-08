@@ -7,11 +7,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
 import { generateShape, type GeneratedShape } from "@/lib/ai-shape.functions";
 
-function formatArea(m2: number): string {
-  if (m2 >= 1_000_000) return `${(m2 / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} km²`;
-  if (m2 >= 10_000) return `${(m2 / 10_000).toLocaleString(undefined, { maximumFractionDigits: 1 })} hectares`;
-  return `${Math.round(m2).toLocaleString()} m²`;
-}
 
 function areaComparison(m2: number): string {
   const pitch = 7140;
