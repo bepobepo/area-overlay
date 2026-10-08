@@ -165,6 +165,9 @@ export function ShapeSwapMap() {
   const [searching, setSearching] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [drawingPoints, setDrawingPoints] = useState<LngLat[]>([]);
+  const [pointsOpen, setPointsOpen] = useState(false);
+  const drawStyleRef = useRef<"freehand" | "points">("freehand");
+  const closedRef = useRef(false);
 
   const search = useServerFn(searchPlaces);
   const genShape = useServerFn(generateShape);
@@ -353,7 +356,14 @@ export function ShapeSwapMap() {
         id: "drawing-line",
         type: "line",
         source: "drawing",
-        filter: ["==", "$type", "LineString"],
+        filter: ["all", ["==", "$type", "LineString"], ["!=", "kind", "closing"]],
+        paint: { "line-color": "#22d3ee", "line-width": 2.5 },
+      });
+      map.addLayer({
+        id: "drawing-closing",
+        type: "line",
+        source: "drawing",
+        filter: ["all", ["==", "$type", "LineString"], ["==", "kind", "closing"]],
         paint: { "line-color": "#22d3ee", "line-width": 2, "line-dasharray": [2, 2] },
       });
       map.addLayer({
@@ -413,8 +423,12 @@ export function ShapeSwapMap() {
     const LONG_PRESS_MS = 500;
     const MOVE_TOLERANCE = 8;
     const FREEHAND_MIN_PX = 6;
+    const TAP_TOLERANCE = 6;
+    const DOUBLE_TAP_MS = 300;
     let pressStart: { x: number; y: number } | null = null;
     let lastFreehandPx: { x: number; y: number } | null = null;
+    let drawPress: { x: number; y: number; pt: LngLat } | null = null;
+    let lastTap: { x: number; y: number; t: number } | null = null;
 
     const cancelLongPress = () => {
       if (longPressTimerRef.current) {
@@ -422,6 +436,46 @@ export function ShapeSwapMap() {
         longPressTimerRef.current = null;
       }
       pressStart = null;
+    };
+
+    const handleDrawTap = (press: { x: number; y: number; pt: LngLat }) => {
+      const now = Date.now();
+      const last = lastTap;
+      lastTap = { x: press.x, y: press.y, t: now };
+      if (drawStyleRef.current !== "points" || closedRef.current) {
+        drawStyleRef.current = "points";
+        closedRef.current = false;
+        drawingRef.current = [press.pt];
+        setPointsOpen(true);
+        setDrawingPoints([press.pt]);
+        return;
+      }
+      const pts = drawingRef.current;
+      const closeShape = () => {
+        closedRef.current = true;
+        setPointsOpen(false);
+        setDrawingPoints([...drawingRef.current]);
+      };
+      // Double-tap → close (the first tap already placed the point)
+      if (
+        last &&
+        now - last.t < DOUBLE_TAP_MS &&
+        Math.hypot(press.x - last.x, press.y - last.y) < 20
+      ) {
+        if (pts.length >= 3) closeShape();
+        lastTap = null;
+        return;
+      }
+      // Tap first vertex → close
+      if (pts.length >= 3) {
+        const f = map.project(pts[0] as [number, number]);
+        if (Math.hypot(press.x - f.x, press.y - f.y) < 14) {
+          closeShape();
+          return;
+        }
+      }
+      drawingRef.current = [...pts, press.pt];
+      setDrawingPoints([...drawingRef.current]);
     };
 
     const finishFreehand = () => {
@@ -437,6 +491,13 @@ export function ShapeSwapMap() {
 
 
     const endDrag = () => {
+      if (drawPress && !freehandRef.current) {
+        const press = drawPress;
+        drawPress = null;
+        map.dragPan.enable();
+        if (modeRef.current === "drawing") handleDrawTap(press);
+      }
+      drawPress = null;
       if (draggingRef.current) {
         draggingRef.current = false;
         setIsDragging(false);
@@ -470,11 +531,7 @@ export function ShapeSwapMap() {
       if (modeRef.current === "drawing") {
         map.dragPan.disable();
         map.getCanvas().style.cursor = "crosshair";
-        freehandRef.current = true;
-        const pt: LngLat = [lngLat.lng, lngLat.lat];
-        drawingRef.current = [pt];
-        setDrawingPoints([pt]);
-        lastFreehandPx = { x: point.x, y: point.y };
+        drawPress = { x: point.x, y: point.y, pt: [lngLat.lng, lngLat.lat] };
         return;
       }
       if (modeRef.current !== "locked") return;
@@ -513,6 +570,19 @@ export function ShapeSwapMap() {
       point: { x: number; y: number },
       lngLat: { lng: number; lat: number },
     ) => {
+      if (drawPress && !freehandRef.current) {
+        const dx = point.x - drawPress.x;
+        const dy = point.y - drawPress.y;
+        if (dx * dx + dy * dy < TAP_TOLERANCE * TAP_TOLERANCE) return;
+        // Became a drag → start a fresh freehand trace
+        freehandRef.current = true;
+        drawStyleRef.current = "freehand";
+        closedRef.current = false;
+        setPointsOpen(false);
+        drawingRef.current = [drawPress.pt];
+        lastFreehandPx = { x: drawPress.x, y: drawPress.y };
+        drawPress = null;
+      }
       if (freehandRef.current) {
         if (lastFreehandPx) {
           const dx = point.x - lastFreehandPx.x;
@@ -588,7 +658,10 @@ export function ShapeSwapMap() {
 
     map.on("mouseup", endDrag);
     map.on("touchend", endDrag);
-    map.on("touchcancel", endDrag);
+    map.on("touchcancel", () => {
+      drawPress = null;
+      endDrag();
+    });
 
     // --- Rotate handle (DOM overlay, screen-anchored above the shape) ---
     const positionRotateHandle = () => {
@@ -669,12 +742,14 @@ export function ShapeSwapMap() {
   }, []);
 
 
-  // Reflect drawing mode on the map cursor
+  // Reflect drawing mode on the map cursor + disable double-click zoom while drawing
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     const canvas = map.getCanvas();
     canvas.style.cursor = mode === "drawing" ? "crosshair" : "";
+    if (mode === "drawing") map.doubleClickZoom.disable();
+    else map.doubleClickZoom.enable();
     return () => {
       canvas.style.cursor = "";
     };
@@ -695,15 +770,41 @@ export function ShapeSwapMap() {
         geometry: { type: "Polygon", coordinates: [closed] },
         properties: {},
       });
+    }
+    if (pointsOpen) {
+      if (drawingPoints.length >= 2) {
+        features.push({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: drawingPoints },
+          properties: { kind: "path" },
+        });
+      }
+      if (drawingPoints.length >= 3) {
+        features.push({
+          type: "Feature",
+          geometry: {
+            type: "LineString",
+            coordinates: [drawingPoints[drawingPoints.length - 1], drawingPoints[0]],
+          },
+          properties: { kind: "closing" },
+        });
+      }
+      drawingPoints.forEach((p, i) =>
+        features.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: p },
+          properties: { first: i === 0 },
+        }),
+      );
     } else if (drawingPoints.length === 2) {
       features.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: drawingPoints },
-        properties: {},
+        properties: { kind: "path" },
       });
     }
     src.setData({ type: "FeatureCollection", features });
-  }, [drawingPoints]);
+  }, [drawingPoints, pointsOpen]);
 
 
   // Update original polygon source
@@ -800,6 +901,9 @@ export function ShapeSwapMap() {
 
   const startDrawing = useCallback(() => {
     drawingRef.current = [];
+    drawStyleRef.current = "freehand";
+    closedRef.current = false;
+    setPointsOpen(false);
     setDrawingPoints([]);
     setOriginalRing(null);
     setOverlayCenter(null);
@@ -813,14 +917,21 @@ export function ShapeSwapMap() {
     if (drawingRef.current.length < 3) return;
     setOriginalRing([...drawingRef.current]);
     drawingRef.current = [];
+    closedRef.current = false;
+    setPointsOpen(false);
     setDrawingPoints([]);
     setMode("locked");
   }, []);
 
-
+  const undoPoint = useCallback(() => {
+    drawingRef.current = drawingRef.current.slice(0, -1);
+    setDrawingPoints([...drawingRef.current]);
+  }, []);
 
   const clearAll = useCallback(() => {
     drawingRef.current = [];
+    closedRef.current = false;
+    setPointsOpen(false);
     setDrawingPoints([]);
     setOriginalRing(null);
     setOverlayCenter(null);
@@ -1055,9 +1166,13 @@ export function ShapeSwapMap() {
           {mode === "drawing" && (
             <div className="flex flex-col gap-2">
               <p className="text-xs text-muted-foreground px-1">
-                {drawingPoints.length >= 3
-                  ? "Looks good? Tap Ready — or draw again to redo."
-                  : "Press and drag on the map to trace a shape freehand."}
+                {pointsOpen
+                  ? drawingPoints.length >= 3
+                    ? "Keep tapping to add points. Double-tap or tap the first point to close."
+                    : "Tap to add more points."
+                  : drawingPoints.length >= 3
+                    ? "Looks good? Tap Ready — or draw again to redo."
+                    : "Drag to trace, or tap to place points. Double-tap to close."}
               </p>
               <div className="flex gap-2">
                 <button
@@ -1066,6 +1181,14 @@ export function ShapeSwapMap() {
                 >
                   Cancel
                 </button>
+                {pointsOpen && drawingPoints.length > 0 && (
+                  <button
+                    onClick={undoPoint}
+                    className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
+                  >
+                    Undo point
+                  </button>
+                )}
                 <button
                   onClick={finishDrawing}
                   disabled={drawingPoints.length < 3}
