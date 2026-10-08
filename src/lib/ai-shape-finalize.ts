@@ -14,11 +14,11 @@ function shoelace(points: Pt[]): number {
 }
 
 /** Look up the real boundary of a named place on OpenStreetMap; returns ring in meters around its centroid. */
-async function fetchOsmOutline(query: string): Promise<{ points: Pt[]; area: number } | null> {
+async function fetchOsmOutline(query: string, expectedArea: number): Promise<{ points: Pt[]; area: number } | null> {
   const url = new URL("https://nominatim.openstreetmap.org/search");
   url.searchParams.set("q", query);
   url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("limit", "3");
+  url.searchParams.set("limit", "5");
   url.searchParams.set("polygon_geojson", "1");
   try {
     const res = await fetch(url.toString(), {
@@ -41,6 +41,11 @@ async function fetchOsmOutline(query: string): Promise<{ points: Pt[]; area: num
         }
       }
       if (!best || bestArea <= 0) continue;
+      // Admin boundaries often include territorial waters; reject outlines far off the documented land area.
+      if (expectedArea > 0) {
+        const ratio = bestArea / expectedArea;
+        if (ratio < 0.6 || ratio > 1.6) continue;
+      }
       let poly = turf.polygon([best]);
       let tol = 0.0001;
       while (poly.geometry.coordinates[0].length > 400 && tol < 1) {
@@ -68,7 +73,7 @@ export async function finalizeShape(
   placeQuery: string | null,
 ): Promise<GeneratedShape> {
   if (kind === "real_place" && placeQuery) {
-    const osm = await fetchOsmOutline(placeQuery);
+    const osm = await fetchOsmOutline(placeQuery, shape.area_m2);
     if (osm) return { ...shape, points_m: osm.points, area_m2: osm.area, outline_source: "osm" };
   }
   const actual = shoelace(shape.points_m);
