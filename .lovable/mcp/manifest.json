@@ -40,7 +40,7 @@
       {
         "name": "generate_area_shape",
         "title": "Generate area shape",
-        "description": "Estimate the real-world footprint of a described thing (e.g. '5 shipping containers', 'a football pitch') and return it as a polygon in meters, centered on (0,0).",
+        "description": "Estimate the real-world footprint of a described thing (e.g. '5 shipping containers', 'area hit by the Hiroshima bomb') and return it as a polygon in meters centered on (0,0), with reasoning, context, people affected and a source when applicable.",
         "annotations": {
           "readOnlyHint": true,
           "openWorldHint": true

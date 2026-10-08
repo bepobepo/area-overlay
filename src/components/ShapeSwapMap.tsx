@@ -5,7 +5,16 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
-import { generateShape } from "@/lib/ai-shape.functions";
+import { generateShape, type GeneratedShape } from "@/lib/ai-shape.functions";
+
+
+function areaComparison(m2: number): string {
+  const pitch = 7140;
+  if (m2 < 300) return `about ${Math.max(1, Math.round(m2 / 15))} parking spaces`;
+  if (m2 < pitch * 0.5) return `about ${Math.round((m2 / pitch) * 100)}% of a football pitch`;
+  const n = Math.round(m2 / pitch);
+  return `about ${n.toLocaleString()} football pitch${n === 1 ? "" : "es"}`;
+}
 import {
   searchDisasters,
   eventAreaM2,
@@ -219,33 +228,41 @@ export function ShapeSwapMap() {
     if (overlayCenter && !searchTipDismissed) dismissSearchTip();
   }, [overlayCenter, searchTipDismissed, dismissSearchTip]);
 
+  const [pendingShape, setPendingShape] = useState<GeneratedShape | null>(null);
+
   const runAiGenerate = useCallback(async () => {
-    const map = mapRef.current;
     const desc = aiDescription.trim();
-    if (!map || !desc) return;
+    if (!desc) return;
     setAiLoading(true);
     setAiError(null);
     try {
       const shape = await genShape({ data: { description: desc } });
-      const c = map.getCenter();
-      const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
-      setOriginalRing(ring);
-      setOverlayCenter([c.lng, c.lat]);
-      setOverlayRotation(0);
-      setShapeLabel(shape.label || desc);
-      setMode("locked");
-      setAiOpen(false);
-      setAiDescription("");
-      // fit bounds
-      const closed = [...ring, ring[0]];
-      const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
-      map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 80, duration: 800 });
+      setPendingShape(shape);
     } catch (e) {
       setAiError(e instanceof Error ? e.message : "Something went wrong");
     } finally {
       setAiLoading(false);
     }
   }, [aiDescription, genShape]);
+
+  const applyPendingShape = useCallback(() => {
+    const map = mapRef.current;
+    const shape = pendingShape;
+    if (!map || !shape) return;
+    const c = map.getCenter();
+    const ring = metersPolygonToLngLat(shape.points_m, [c.lng, c.lat]);
+    setOriginalRing(ring);
+    setOverlayCenter([c.lng, c.lat]);
+    setOverlayRotation(0);
+    setShapeLabel(shape.label || aiDescription.trim());
+    setMode("locked");
+    setAiOpen(false);
+    setAiDescription("");
+    setPendingShape(null);
+    const closed = [...ring, ring[0]];
+    const bbox = turf.bbox(turf.polygon([closed])) as [number, number, number, number];
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 80, duration: 800 });
+  }, [pendingShape, aiDescription]);
 
   const loadNews = useCallback(
     async (type: typeof newsType, force = false) => {
@@ -1142,6 +1159,7 @@ export function ShapeSwapMap() {
                 <button
                   onClick={() => {
                     setAiError(null);
+                    setPendingShape(null);
                     setAiOpen(true);
                   }}
                   className="flex-1 rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 active:bg-fuchsia-800 text-white font-medium py-3 text-sm transition inline-flex items-center justify-center gap-1.5"
@@ -1267,6 +1285,71 @@ export function ShapeSwapMap() {
                 ✕
               </button>
             </div>
+            {pendingShape ? (
+              <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
+                <div>
+                  <p className="text-sm font-semibold">{pendingShape.label || aiDescription}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatArea(pendingShape.area_m2)} · {areaComparison(pendingShape.area_m2)}
+                  </p>
+                </div>
+                {pendingShape.reasoning && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">How the size was worked out</p>
+                    <p className="text-sm">{pendingShape.reasoning}</p>
+                  </div>
+                )}
+                {pendingShape.context && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">What happened</p>
+                    <p className="text-sm">{pendingShape.context}</p>
+                  </div>
+                )}
+                {pendingShape.people_affected != null && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">People affected</p>
+                    <p className="text-sm">
+                      ~{pendingShape.people_affected.toLocaleString()} {pendingShape.people_affected_note}
+                    </p>
+                  </div>
+                )}
+                {pendingShape.source_name && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Source</p>
+                    {pendingShape.source_url ? (
+                      <a
+                        href={pendingShape.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-fuchsia-600 underline"
+                      >
+                        {pendingShape.source_name} ↗
+                      </a>
+                    ) : (
+                      <p className="text-sm">{pendingShape.source_name}</p>
+                    )}
+                  </div>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Figures are AI estimates and may be inaccurate.
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setPendingShape(null)}
+                    className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={applyPendingShape}
+                    className="flex-[1.4] rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-medium py-3 text-sm"
+                  >
+                    Draw on map
+                  </button>
+                </div>
+              </div>
+            ) : (
+            <>
             <p className="text-xs text-muted-foreground">
               Describe an area or object and AI will estimate its real-world size and draw it on the map.
             </p>
@@ -1275,12 +1358,12 @@ export function ShapeSwapMap() {
               onChange={(e) => setAiDescription(e.target.value)}
               disabled={aiLoading}
               rows={3}
-              placeholder="e.g. 5 shipping containers, a football pitch, a Boeing 747"
+              placeholder="e.g. 5 shipping containers, a football pitch, area hit by the Hiroshima bomb"
               className="w-full rounded-xl border border-black/10 bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-fuchsia-500/50 resize-none"
               autoFocus
             />
             <div className="flex flex-wrap gap-1.5">
-              {["5 shipping containers", "A football pitch", "A Boeing 747", "An Olympic swimming pool"].map((s) => (
+              {["5 shipping containers", "A football pitch", "A Boeing 747", "Area hit by the Hiroshima bomb"].map((s) => (
                 <button
                   key={s}
                   onClick={() => setAiDescription(s)}
@@ -1317,6 +1400,8 @@ export function ShapeSwapMap() {
                 )}
               </button>
             </div>
+            </>
+            )}
           </div>
         </div>
       )}
