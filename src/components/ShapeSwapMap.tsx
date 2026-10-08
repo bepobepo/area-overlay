@@ -1293,6 +1293,11 @@ export function ShapeSwapMap() {
                     {formatArea(pendingShape.area_m2)} · {areaComparison(pendingShape.area_m2)}
                   </p>
                 </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {pendingShape.outline_source === "osm"
+                    ? "Outline: official boundary (OpenStreetMap)"
+                    : `Outline: AI estimate, scaled to ${formatArea(pendingShape.area_m2)}`}
+                </p>
                 {pendingShape.reasoning && (
                   <div>
                     <p className="text-[11px] uppercase tracking-wide text-muted-foreground">How the size was worked out</p>

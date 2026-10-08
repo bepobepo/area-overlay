@@ -8,6 +8,9 @@ export type GeneratedShape = {
   people_affected_note: string;
   source_name: string | null;
   source_url: string | null;
+  outline_source?: "osm" | "ai";
+  kind?: string;
+  place_query?: string | null;
 };
 
 export const SHAPE_SYSTEM = `You estimate the real-world footprint (top-down plan view) of things a user describes and return it as a polygon, plus a short explanation.
@@ -22,7 +25,8 @@ Rules:
 - reasoning: 2-4 sentences explaining how the size was derived (dimensions, radius, formula, assumptions).
 - context: 1-3 sentences of background for real events/places; empty string for generic objects.
 - people_affected: number of people affected (killed/injured/displaced) only for real events; otherwise null. people_affected_note says what it counts (e.g. "killed by end of 1945"), empty string if null.
-- source_name/source_url: a reputable source (e.g. Wikipedia, official agency). Only give a URL if it is a well-known stable page you are confident exists; otherwise null. Use null for both when not applicable.`;
+- source_name/source_url: a reputable source (e.g. Wikipedia, official agency). Only give a URL if it is a well-known stable page you are confident exists; otherwise null. Use null for both when not applicable.
+- kind: "real_place" if the description names a specific real place with a mapped boundary (a country, territory, city, park, lake, island, district), otherwise "estimate". place_query: for real_place, a precise geocodable name (e.g. "Gaza Strip", "Central Park, New York"); otherwise null.`;
 
 export const SHAPE_SCHEMA = {
   type: "object",
@@ -45,6 +49,8 @@ export const SHAPE_SCHEMA = {
     people_affected_note: { type: "string" },
     source_name: { type: ["string", "null"] },
     source_url: { type: ["string", "null"] },
+    kind: { type: "string", enum: ["real_place", "estimate"] },
+    place_query: { type: ["string", "null"] },
   },
   required: [
     "label",
@@ -56,6 +62,8 @@ export const SHAPE_SCHEMA = {
     "people_affected_note",
     "source_name",
     "source_url",
+    "kind",
+    "place_query",
   ],
 } as const;
 
