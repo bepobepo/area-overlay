@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { finalizeShape } from "./ai-shape-finalize";
 import { SHAPE_SCHEMA, SHAPE_SYSTEM, sanitizeShape, type GeneratedShape } from "./ai-shape-schema";
 
 export type { GeneratedShape };
@@ -42,5 +43,5 @@ export const generateShape = createServerFn({ method: "POST" })
     }
     const shape = sanitizeShape(parsed);
     if (!shape) throw new Error("Invalid polygon");
-    return shape;
+    return finalizeShape(shape, parsed.kind ?? "estimate", parsed.place_query ?? null);
   });

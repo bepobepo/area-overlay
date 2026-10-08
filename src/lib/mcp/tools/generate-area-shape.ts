@@ -1,5 +1,6 @@
 import { defineTool, ToolError } from "@lovable.dev/mcp-js";
 import { z } from "zod";
+import { finalizeShape } from "../../ai-shape-finalize";
 import { SHAPE_SCHEMA, SHAPE_SYSTEM, sanitizeShape, type GeneratedShape } from "../../ai-shape-schema";
 
 type RuntimeGlobals = typeof globalThis & {
@@ -56,8 +57,9 @@ export default defineTool({
     } catch {
       throw new ToolError("The model returned an unreadable shape.");
     }
-    const shape = sanitizeShape(raw);
-    if (!shape) throw new ToolError("The model returned an invalid polygon.");
+    const clean = sanitizeShape(raw);
+    if (!clean) throw new ToolError("The model returned an invalid polygon.");
+    const shape = await finalizeShape(clean, raw.kind ?? "estimate", raw.place_query ?? null);
 
     return {
       content: [{ type: "text" as const, text: JSON.stringify(shape, null, 2) }],
