@@ -8,7 +8,8 @@ export type GeneratedShape = {
   people_affected_note: string;
   source_name: string | null;
   source_url: string | null;
-  outline_source?: "osm" | "ai";
+  outline_source?: "osm" | "ai" | "generic";
+  shape_type?: string;
   kind?: string;
   place_query?: string | null;
 };
@@ -26,7 +27,8 @@ Rules:
 - context: 1-3 sentences of background for real events/places; empty string for generic objects.
 - people_affected: number of people affected (killed/injured/displaced) only for real events; otherwise null. people_affected_note says what it counts (e.g. "killed by end of 1945"), empty string if null.
 - source_name/source_url: a reputable source (e.g. Wikipedia, official agency). Only give a URL if it is a well-known stable page you are confident exists; otherwise null. Use null for both when not applicable.
-- kind: "real_place" if the description names a specific real place with a mapped boundary (a country, territory, city, park, lake, island, district), otherwise "estimate". place_query: for real_place, a precise geocodable name (e.g. "Gaza Strip", "Central Park, New York"); otherwise null.`;
+- kind: "real_place" if the description names a specific real place with a mapped boundary (a country, territory, city, park, lake, island, district), otherwise "estimate". place_query: for real_place, a precise geocodable name (e.g. "Gaza Strip", "Central Park, New York"); otherwise null.
+- shape_type: "object" for man-made objects/buildings/vehicles/fields with a known rectangular or fixed footprint; "area" for places, regions, events and natural areas.`;
 
 export const SHAPE_SCHEMA = {
   type: "object",
@@ -51,6 +53,7 @@ export const SHAPE_SCHEMA = {
     source_url: { type: ["string", "null"] },
     kind: { type: "string", enum: ["real_place", "estimate"] },
     place_query: { type: ["string", "null"] },
+    shape_type: { type: "string", enum: ["object", "area"] },
   },
   required: [
     "label",
@@ -64,6 +67,7 @@ export const SHAPE_SCHEMA = {
     "source_url",
     "kind",
     "place_query",
+    "shape_type",
   ],
 } as const;
 

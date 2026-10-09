@@ -59,7 +59,7 @@ export default defineTool({
     }
     const clean = sanitizeShape(raw);
     if (!clean) throw new ToolError("The model returned an invalid polygon.");
-    const shape = await finalizeShape(clean, raw.kind ?? "estimate", raw.place_query ?? null);
+    const shape = await finalizeShape(clean, raw.kind ?? "estimate", raw.place_query ?? null, raw.shape_type);
 
     return {
       content: [{ type: "text" as const, text: JSON.stringify(shape, null, 2) }],

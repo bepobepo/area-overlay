@@ -43,5 +43,5 @@ export const generateShape = createServerFn({ method: "POST" })
     }
     const shape = sanitizeShape(parsed);
     if (!shape) throw new Error("Invalid polygon");
-    return finalizeShape(shape, parsed.kind ?? "estimate", parsed.place_query ?? null);
+    return finalizeShape(shape, parsed.kind ?? "estimate", parsed.place_query ?? null, parsed.shape_type);
   });
