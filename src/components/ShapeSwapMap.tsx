@@ -1296,6 +1296,8 @@ export function ShapeSwapMap() {
                 <p className="text-[11px] text-muted-foreground">
                   {pendingShape.outline_source === "osm"
                     ? "Outline: official boundary (OpenStreetMap)"
+                    : pendingShape.outline_source === "generic"
+                    ? `Outline: simplified shape for scale (${formatArea(pendingShape.area_m2)})`
                     : `Outline: AI estimate, scaled to ${formatArea(pendingShape.area_m2)}`}
                 </p>
                 {pendingShape.reasoning && (

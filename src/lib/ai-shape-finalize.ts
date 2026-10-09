@@ -71,10 +71,25 @@ export async function finalizeShape(
   shape: GeneratedShape,
   kind: string,
   placeQuery: string | null,
+  shapeType: string = "object",
 ): Promise<GeneratedShape> {
   if (kind === "real_place" && placeQuery) {
     const osm = await fetchOsmOutline(placeQuery, shape.area_m2);
     if (osm) return { ...shape, points_m: osm.points, area_m2: osm.area, outline_source: "osm" };
+  }
+  if (shapeType === "area" && shape.area_m2 > 0) {
+    // Simple rounded shape for scale: ellipse with 1.3:1 aspect, exact area.
+    const aspect = 1.3;
+    const b = Math.sqrt(shape.area_m2 / (Math.PI * aspect));
+    const a = b * aspect;
+    const n = 48;
+    const pts = Array.from({ length: n }, (_, i) => {
+      const t = (i / n) * 2 * Math.PI;
+      return { x: a * Math.cos(t), y: b * Math.sin(t) };
+    });
+    const k = Math.sqrt(shape.area_m2 / shoelace(pts));
+    const points = pts.map((p) => ({ x: p.x * k, y: p.y * k }));
+    return { ...shape, points_m: points, area_m2: shoelace(points), outline_source: "generic" };
   }
   const actual = shoelace(shape.points_m);
   let points = shape.points_m;
