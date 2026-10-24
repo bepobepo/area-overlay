@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { RotateCw, LocateFixed, Loader2, HelpCircle, Pencil, Search, Layers } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
+import introVideo from "@/assets/shapeswap-intro.mp4.asset.json";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
@@ -1100,7 +1101,18 @@ export function ShapeSwapMap() {
 
       {welcomeOpen && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl">
+          <div className="w-full max-w-sm max-h-full overflow-y-auto rounded-2xl bg-background p-5 shadow-2xl">
+            <video
+              src={introVideo.url}
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              preload="metadata"
+              className="mx-auto mb-4 max-h-[45vh] w-auto rounded-xl bg-muted"
+              style={{ aspectRatio: "780 / 940" }}
+            />
             <h2 className="text-lg font-semibold">Welcome to Shape Swap</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               Draw around any place — a park, a neighbourhood, a city — then drop that exact shape onto
