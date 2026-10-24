@@ -1616,9 +1616,10 @@ export function ShapeSwapMap() {
                 {overlayCenter && (
                   <button
                     onClick={shareComparison}
-                    className="flex-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm inline-flex items-center justify-center gap-1.5"
+                    disabled={shareBusy}
+                    className="flex-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-70"
                   >
-                    <Share2 size={14} /> Share
+                    {shareBusy ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />} Share
                   </button>
                 )}
                 <button
