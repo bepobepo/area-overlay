@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
-import { RotateCw } from "lucide-react";
+import { RotateCw, LocateFixed, Loader2, HelpCircle, Pencil, Search, Layers } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
@@ -29,7 +29,7 @@ const MAPTILER_KEY = "PHdof98UIhcQKfX6LgHd";
 const MAP_STYLE = `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`;
 const STORAGE_KEY = "shapeswap.polygon.v1";
 const ONBOARDING_BUTTONS_KEY = "shapeswap.onboarding.buttonsDismissed.v1";
-const ONBOARDING_SEARCH_KEY = "shapeswap.onboarding.searchDismissed.v1";
+const WELCOME_KEY = "shapeswap.welcome.v1";
 
 
 /** Translate a polygon so its centroid is at newCenter, preserving real-world size. */
@@ -205,10 +205,21 @@ export function ShapeSwapMap() {
   // Onboarding — two independent dismissal flags
   const [buttonsTipDismissed, setButtonsTipDismissed] = useState(true);
   const [searchTipDismissed, setSearchTipDismissed] = useState(true);
+  const [welcomeOpen, setWelcomeOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [locateError, setLocateError] = useState<string | null>(null);
+  const userMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     try {
       setButtonsTipDismissed(localStorage.getItem(ONBOARDING_BUTTONS_KEY) === "1");
-      setSearchTipDismissed(localStorage.getItem(ONBOARDING_SEARCH_KEY) === "1");
+      setWelcomeOpen(localStorage.getItem(WELCOME_KEY) !== "1");
+    } catch {}
+  }, []);
+  const closeWelcome = useCallback(() => {
+    setWelcomeOpen(false);
+    try {
+      localStorage.setItem(WELCOME_KEY, "1");
     } catch {}
   }, []);
   const dismissButtonsTip = useCallback(() => {
@@ -217,16 +228,8 @@ export function ShapeSwapMap() {
       localStorage.setItem(ONBOARDING_BUTTONS_KEY, "1");
     } catch {}
   }, []);
-  const dismissSearchTip = useCallback(() => {
-    setSearchTipDismissed(true);
-    try {
-      localStorage.setItem(ONBOARDING_SEARCH_KEY, "1");
-    } catch {}
-  }, []);
-  // Auto-dismiss the search tip once an overlay is placed
-  useEffect(() => {
-    if (overlayCenter && !searchTipDismissed) dismissSearchTip();
-  }, [overlayCenter, searchTipDismissed, dismissSearchTip]);
+  // The search hint is per-shape: dismissing only hides it for the current shape.
+  const dismissSearchTip = useCallback(() => setSearchTipDismissed(true), []);
 
   const [pendingShape, setPendingShape] = useState<GeneratedShape | null>(null);
 
@@ -973,6 +976,47 @@ export function ShapeSwapMap() {
   }, []);
 
 
+  const locateMe = useCallback(
+    (placeShape: boolean) => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (!("geolocation" in navigator)) {
+        setLocateError("Your browser can't share your location.");
+        return;
+      }
+      setLocating(true);
+      setLocateError(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocating(false);
+          const c: LngLat = [pos.coords.longitude, pos.coords.latitude];
+          if (!userMarkerRef.current) {
+            const el = document.createElement("div");
+            el.style.cssText =
+              "width:16px;height:16px;border-radius:9999px;background:#2563eb;border:3px solid white;box-shadow:0 0 0 6px rgba(37,99,235,.25)";
+            userMarkerRef.current = new maplibregl.Marker({ element: el });
+          }
+          userMarkerRef.current.setLngLat(c).addTo(map);
+          if (placeShape && mode === "locked" && originalRing) {
+            setOverlayCenter(c);
+            setQuery("My location");
+          }
+          map.flyTo({ center: c, zoom: Math.max(map.getZoom(), 14), essential: true });
+        },
+        (err) => {
+          setLocating(false);
+          setLocateError(
+            err.code === err.PERMISSION_DENIED
+              ? "Location access was blocked. Allow it in your browser settings to use this."
+              : "Couldn't find your location. Please try again.",
+          );
+        },
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+    },
+    [mode, originalRing],
+  );
+
   const pickResult = useCallback(
     (r: GeocodeResult) => {
       const map = mapRef.current;
@@ -1018,6 +1062,64 @@ export function ShapeSwapMap() {
         </button>
       </div>
 
+      {/* Map side buttons: help + my location */}
+      <div className="absolute right-3 top-1/2 z-20 -translate-y-1/2 flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setWelcomeOpen(true)}
+          aria-label="How it works"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-background/90 text-foreground shadow-lg ring-1 ring-black/10 active:bg-accent"
+        >
+          <HelpCircle size={18} />
+        </button>
+        <button
+          type="button"
+          onClick={() => locateMe(false)}
+          aria-label="Go to my location"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-background/90 text-cyan-600 shadow-lg ring-1 ring-black/10 active:bg-accent"
+        >
+          {locating ? <Loader2 size={18} className="animate-spin" /> : <LocateFixed size={18} />}
+        </button>
+      </div>
+      {locateError && (
+        <div className="absolute left-1/2 top-24 z-30 -translate-x-1/2 max-w-[20rem] rounded-xl bg-foreground text-background text-xs px-3 py-2 shadow-lg flex items-center gap-2">
+          <span>{locateError}</span>
+          <button onClick={() => setLocateError(null)} aria-label="Dismiss" className="opacity-70">✕</button>
+        </div>
+      )}
+
+      {welcomeOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-foreground/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl">
+            <h2 className="text-lg font-semibold">Welcome to Shape Swap</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Draw around any place — a park, a neighbourhood, a city — then drop that exact shape onto
+              another place to see how big it really is there.
+            </p>
+            <ol className="mt-4 flex flex-col gap-3 text-sm">
+              <li className="flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-cyan-600 text-white"><Pencil size={14} /></span>
+                <span><b>Draw a shape</b> on the map, or describe one and let AI draw it.</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-fuchsia-600 text-white"><Search size={14} /></span>
+                <span><b>Search a place</b> you want to compare it with.</span>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-pink-500 text-white"><Layers size={14} /></span>
+                <span><b>Compare</b> — the shape keeps its real size. Hold it to move or rotate.</span>
+              </li>
+            </ol>
+            <button
+              onClick={closeWelcome}
+              className="mt-5 w-full rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {/* Top: search */}
       <div className="relative z-10 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
@@ -1031,6 +1133,7 @@ export function ShapeSwapMap() {
               <path d="m20 20-3-3" />
             </svg>
             <input
+              ref={searchInputRef}
               value={query}
               onChange={(e) => {
                 setQuery(e.target.value);
@@ -1059,8 +1162,19 @@ export function ShapeSwapMap() {
               </button>
             )}
           </div>
-          {showResults && (results.length > 0 || searching) && (
+          {showResults && (results.length > 0 || searching || (mode === "locked" && !query)) && (
             <div className="border-t border-black/5 max-h-72 overflow-y-auto">
+              {mode === "locked" && (
+                <button
+                  onClick={() => {
+                    setShowResults(false);
+                    locateMe(true);
+                  }}
+                  className="w-full text-left px-3 py-2.5 text-sm hover:bg-accent flex items-center gap-2"
+                >
+                  <LocateFixed size={16} className="text-cyan-600" /> Use my location
+                </button>
+              )}
               {searching && (
                 <div className="px-3 py-2 text-xs text-muted-foreground">Searching…</div>
               )}
@@ -1080,14 +1194,16 @@ export function ShapeSwapMap() {
           <div className="mt-2 flex flex-col items-center">
             <div className="h-2 w-2 rotate-45 bg-cyan-600 -mb-1" />
             <div className="max-w-[22rem] rounded-xl bg-cyan-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
-              <span aria-hidden>🔍</span>
-              <span>Now search for a place on the map to compare it to.</span>
+              <span aria-hidden>👆</span>
+              <span>
+                <b>Shape saved ({area}).</b> Now search a place above to compare it with.
+              </span>
               <button
                 onClick={dismissSearchTip}
                 className="ml-1 text-white/80 hover:text-white text-[10px] uppercase tracking-wide"
                 aria-label="Dismiss tip"
               >
-                Got it
+                ✕
               </button>
             </div>
           </div>
