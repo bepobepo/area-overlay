@@ -1035,6 +1035,16 @@ export function ShapeSwapMap() {
 
   const area = originalRing ? formatArea(ringArea(originalRing)) : "—";
 
+  // Every new locked shape without a comparison: show the "search next" hint and focus search.
+  useEffect(() => {
+    if (mode === "locked" && originalRing && !overlayCenter) {
+      setSearchTipDismissed(false);
+      const t = setTimeout(() => searchInputRef.current?.focus({ preventScroll: true }), 300);
+      return () => clearTimeout(t);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, originalRing]);
+
   return (
     <div className="fixed inset-0 flex flex-col bg-background">
       <div
@@ -1241,10 +1251,10 @@ export function ShapeSwapMap() {
       {/* Bottom sheet */}
       <div className="mt-auto relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="relative rounded-2xl bg-background/90 backdrop-blur-md shadow-xl ring-1 ring-black/10 p-3">
-          {mode === "idle" && !buttonsTipDismissed && (
+          {mode === "idle" && !buttonsTipDismissed && !welcomeOpen && (
             <span aria-hidden className="highlight-frame-fuchsia" />
           )}
-          {mode === "idle" && !buttonsTipDismissed && (
+          {mode === "idle" && !buttonsTipDismissed && !welcomeOpen && (
             <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center pointer-events-none">
               <div className="pointer-events-auto max-w-[18rem] rounded-xl bg-fuchsia-600 text-white text-xs px-3 py-2 shadow-lg flex items-center gap-2">
                 <span aria-hidden>👋</span>
