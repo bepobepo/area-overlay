@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
 import { RotateCw, LocateFixed, Loader2, HelpCircle, Pencil, Search, Layers, Share2, Info } from "lucide-react";
+import { renderShareCard, type ShareCardInfo } from "@/lib/share-card";
 import "maplibre-gl/dist/maplibre-gl.css";
 import introVideo from "@/assets/shapeswap-intro.mp4.asset.json";
 
@@ -222,6 +223,8 @@ export function ShapeSwapMap() {
   const [comparePlace, setComparePlace] = useState<string | null>(null);
   const [shareNotice, setShareNotice] = useState<string | null>(null);
   const [sharedBanner, setSharedBanner] = useState<string | null>(null);
+  const [shareCard, setShareCard] = useState<{ blob: Blob; url: string } | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
 
 
   // Onboarding — two independent dismissal flags
@@ -359,6 +362,7 @@ export function ShapeSwapMap() {
       center: [-0.0396, 51.5362], // Victoria Park, London
       zoom: 13,
       attributionControl: { compact: true },
+      canvasContextAttributes: { preserveDrawingBuffer: true },
     });
     mapRef.current = map;
 
@@ -1131,35 +1135,73 @@ export function ShapeSwapMap() {
   const shareComparison = useCallback(async () => {
     const map = mapRef.current;
     if (!map || !originalRing || !overlayCenter) return;
-    const r5 = (n: number) => Math.round(n * 1e5) / 1e5;
-    const c = map.getCenter();
-    const payload = {
-      r: originalRing.map(([x, y]) => [r5(x), r5(y)]),
-      l: shapeLabel ?? "",
-      c: [r5(overlayCenter[0]), r5(overlayCenter[1])],
-      o: Math.round(overlayRotation),
-      p: comparePlace ?? "",
-      v: [r5(c.lng), r5(c.lat), Math.round(map.getZoom() * 100) / 100],
-    };
-    const url = `${window.location.origin}${window.location.pathname}#s=${encodeShare(payload)}`;
-    const name = shapeLabel || "My shape";
-    const where = comparePlace ? ` compared to ${comparePlace}` : " in a new place";
-    const text = `${name} (${area})${where} — see it on Shape Swap`;
+    setShareBusy(true);
     try {
-      if (navigator.share) {
-        await navigator.share({ title: "Shape Swap", text, url });
+      await new Promise<void>((res) => {
+        map.once("render", () => res());
+        map.triggerRepaint();
+      });
+      const m2 = ringArea(originalRing);
+      let info: ShareCardInfo | null = null;
+      if (shapeInfo?.kind === "disaster") {
+        const e = shapeInfo.event;
+        const d = e.date ? new Date(e.date) : null;
+        info = {
+          heading: `${e.type}${d && !isNaN(d.getTime()) ? ` · ${d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}` : ""}`,
+          subheading: e.country || e.place,
+          summary: e.details || e.summary,
+          people: e.people_affected != null ? e.people_affected.toLocaleString() : undefined,
+          source: e.source,
+        };
+      } else if (shapeInfo?.kind === "ai") {
+        const s = shapeInfo.shape;
+        info = {
+          summary: s.context || s.reasoning,
+          people: s.people_affected != null ? s.people_affected.toLocaleString() : undefined,
+          source: s.source_name ?? undefined,
+        };
+      }
+      const blob = await renderShareCard({
+        mapCanvas: map.getCanvas(),
+        label: shapeLabel || "My shape",
+        areaText: formatArea(m2),
+        comparison: areaComparison(m2),
+        place: comparePlace ?? "",
+        info,
+        footer: window.location.host,
+      });
+      setShareCard((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { blob, url: URL.createObjectURL(blob) };
+      });
+    } catch {
+      setShareNotice("Couldn't create the picture. Please try again.");
+    } finally {
+      setShareBusy(false);
+    }
+  }, [originalRing, overlayCenter, shapeLabel, comparePlace, shapeInfo]);
+
+  const downloadCard = useCallback(() => {
+    if (!shareCard) return;
+    const a = document.createElement("a");
+    a.href = shareCard.url;
+    a.download = "shape-swap.png";
+    a.click();
+  }, [shareCard]);
+
+  const sendCard = useCallback(async () => {
+    if (!shareCard) return;
+    const file = new File([shareCard.blob], "shape-swap.png", { type: "image/png" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Shape Swap" });
         return;
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
     }
-    try {
-      await navigator.clipboard.writeText(`${text}\n${url}`);
-      setShareNotice("Link copied — paste it anywhere to share this comparison.");
-    } catch {
-      setShareNotice(url);
-    }
-  }, [originalRing, overlayCenter, overlayRotation, shapeLabel, comparePlace, area]);
+    downloadCard();
+  }, [shareCard, downloadCard]);
 
   // Every new locked shape without a comparison: show the "search next" hint and focus search.
   useEffect(() => {
@@ -1390,6 +1432,30 @@ export function ShapeSwapMap() {
               )}
             </span>
           )}
+        </div>
+      )}
+      {shareCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="flex max-h-full w-full max-w-sm flex-col gap-3 rounded-2xl bg-background p-3 shadow-2xl">
+            <img src={shareCard.url} alt="Comparison picture" className="max-h-[70vh] w-full rounded-xl object-contain" />
+            <div className="flex gap-2">
+              <button onClick={sendCard} className="flex-1 rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground">
+                Share
+              </button>
+              <button onClick={downloadCard} className="flex-1 rounded-xl border px-3 py-2 text-sm font-semibold">
+                Download
+              </button>
+              <button
+                onClick={() => {
+                  URL.revokeObjectURL(shareCard.url);
+                  setShareCard(null);
+                }}
+                className="rounded-xl border px-3 py-2 text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {(shareNotice || sharedBanner) && (
