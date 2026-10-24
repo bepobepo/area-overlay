@@ -1,8 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import maplibregl from "maplibre-gl";
-import { RotateCw, LocateFixed, Loader2, HelpCircle, Pencil, Search, Layers } from "lucide-react";
+import { RotateCw, LocateFixed, Loader2, HelpCircle, Pencil, Search, Layers, Share2, Info } from "lucide-react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import introVideo from "@/assets/shapeswap-intro.mp4.asset.json";
+
+function encodeShare(obj: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(obj));
+  let bin = "";
+  bytes.forEach((b) => (bin += String.fromCharCode(b)));
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function decodeShare(s: string): any {
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 import * as turf from "@turf/turf";
 import { useServerFn } from "@tanstack/react-start";
 import { searchPlaces, type GeocodeResult } from "@/lib/geocode.functions";
@@ -201,6 +215,13 @@ export function ShapeSwapMap() {
   const [newsFetchedAt, setNewsFetchedAt] = useState<string | null>(null);
   const [newsStale, setNewsStale] = useState(false);
   const [shapeLabel, setShapeLabel] = useState<string | null>(null);
+  const [shapeInfo, setShapeInfo] = useState<
+    { kind: "disaster"; event: DisasterEvent } | { kind: "ai"; shape: GeneratedShape } | null
+  >(null);
+  const [aiViewOnly, setAiViewOnly] = useState(false);
+  const [comparePlace, setComparePlace] = useState<string | null>(null);
+  const [shareNotice, setShareNotice] = useState<string | null>(null);
+  const [sharedBanner, setSharedBanner] = useState<string | null>(null);
 
 
   // Onboarding — two independent dismissal flags
@@ -259,6 +280,8 @@ export function ShapeSwapMap() {
     setOverlayCenter([c.lng, c.lat]);
     setOverlayRotation(0);
     setShapeLabel(shape.label || aiDescription.trim());
+    setShapeInfo({ kind: "ai", shape });
+    setComparePlace(null);
     setMode("locked");
     setAiOpen(false);
     setAiDescription("");
@@ -299,6 +322,8 @@ export function ShapeSwapMap() {
     setOverlayRotation(0);
     setActiveShape(null);
     setShapeLabel(`${e.title} · ${e.area_value.toLocaleString()} ${e.area_unit}`);
+    setShapeInfo({ kind: "disaster", event: e });
+    setComparePlace(null);
     setMode("locked");
     setNewsOpen(false);
     const closed = [...ring, ring[0]];
@@ -426,6 +451,53 @@ export function ShapeSwapMap() {
 
 
 
+
+      // Shape name labels (semi-transparent, centred on each shape)
+      for (const id of ["original", "overlay"] as const) {
+        map.addLayer({
+          id: `${id}-label`,
+          type: "symbol",
+          source: id,
+          filter: ["==", ["geometry-type"], "Point"],
+          layout: {
+            "text-field": ["get", "label"],
+            "text-font": ["Noto Sans Bold"],
+            "text-size": ["interpolate", ["linear"], ["zoom"], 3, 11, 10, 13, 16, 16],
+            "text-max-width": 9,
+            "text-rotate": ["get", "rot"],
+            "text-rotation-alignment": "map",
+            "text-allow-overlap": false,
+          },
+          paint: {
+            "text-color": id === "original" ? "#0e7490" : "#be185d",
+            "text-opacity": 0.75,
+            "text-halo-color": "#ffffff",
+            "text-halo-width": 1.5,
+            "text-halo-blur": 0.5,
+          },
+        });
+      }
+
+      // Shared comparison link
+      try {
+        const m = window.location.hash.match(/^#s=(.+)$/);
+        if (m) {
+          const s = decodeShare(m[1]);
+          if (s && Array.isArray(s.r) && s.r.length >= 3) {
+            setOriginalRing(s.r as LngLat[]);
+            setOverlayCenter(s.c as LngLat);
+            setOverlayRotation(Number(s.o) || 0);
+            setShapeLabel(s.l || null);
+            setComparePlace(s.p || null);
+            setMode("locked");
+            if (Array.isArray(s.v)) map.jumpTo({ center: [s.v[0], s.v[1]], zoom: s.v[2] });
+            setSharedBanner(
+              `Shared comparison: ${s.l || "a shape"}${s.p ? ` in ${s.p}` : ""}`,
+            );
+            return;
+          }
+        }
+      } catch {}
 
       // restore saved polygon
       try {
@@ -840,20 +912,19 @@ export function ShapeSwapMap() {
         return;
       }
       const closed = [...originalRing, originalRing[0]];
+      const poly = turf.polygon([closed]);
+      const label = shapeLabel || formatArea(ringArea(originalRing));
       src.setData({
         type: "FeatureCollection",
         features: [
-          {
-            type: "Feature",
-            geometry: { type: "Polygon", coordinates: [closed] },
-            properties: {},
-          },
+          { type: "Feature", geometry: poly.geometry, properties: {} },
+          { ...turf.centroid(poly), properties: { label, rot: 0 } },
         ],
       });
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [originalRing]);
+  }, [originalRing, shapeLabel]);
 
   // Update overlay polygon
   useEffect(() => {
@@ -868,20 +939,19 @@ export function ShapeSwapMap() {
       }
       const moved = computeOverlayRing(originalRing, overlayCenter, overlayRotation);
       const closed = [...moved, moved[0]];
+      const poly = turf.polygon([closed]);
+      const label = shapeLabel || formatArea(ringArea(originalRing));
       src.setData({
         type: "FeatureCollection",
         features: [
-          {
-            type: "Feature",
-            geometry: { type: "Polygon", coordinates: [closed] },
-            properties: {},
-          },
+          { type: "Feature", geometry: poly.geometry, properties: {} },
+          { ...turf.centroid(poly), properties: { label, rot: overlayRotation } },
         ],
       });
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);
-  }, [originalRing, overlayCenter, overlayRotation]);
+  }, [originalRing, overlayCenter, overlayRotation, shapeLabel]);
 
   // Keep the rotate handle glued to the shape when React state changes
   useEffect(() => {
@@ -931,6 +1001,8 @@ export function ShapeSwapMap() {
     setOverlayRotation(0);
     setActiveShape(null);
     setShapeLabel(null);
+    setShapeInfo(null);
+    setComparePlace(null);
     setMode("drawing");
   }, []);
 
@@ -959,6 +1031,13 @@ export function ShapeSwapMap() {
     setOverlayRotation(0);
     setActiveShape(null);
     setShapeLabel(null);
+    setShapeInfo(null);
+    setComparePlace(null);
+    setSharedBanner(null);
+    setShareNotice(null);
+    try {
+      if (window.location.hash.startsWith("#s=")) history.replaceState(null, "", window.location.pathname);
+    } catch {}
     setQuery("");
     setResults([]);
     setMode("idle");
@@ -1026,6 +1105,7 @@ export function ShapeSwapMap() {
       setShowResults(false);
       if (mode === "locked" && originalRing) {
         setOverlayCenter([r.lon, r.lat]);
+        setComparePlace(r.label.split(",")[0]);
         map.flyTo({ center: [r.lon, r.lat], zoom: 13, essential: true });
       } else {
         map.flyTo({ center: [r.lon, r.lat], zoom: 13, essential: true });
@@ -1035,6 +1115,51 @@ export function ShapeSwapMap() {
   );
 
   const area = originalRing ? formatArea(ringArea(originalRing)) : "—";
+
+  const openShapeInfo = useCallback(() => {
+    if (!shapeInfo) return;
+    if (shapeInfo.kind === "disaster") {
+      setDetailEvent(shapeInfo.event);
+      setNewsOpen(true);
+    } else {
+      setPendingShape(shapeInfo.shape);
+      setAiViewOnly(true);
+      setAiOpen(true);
+    }
+  }, [shapeInfo]);
+
+  const shareComparison = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !originalRing || !overlayCenter) return;
+    const r5 = (n: number) => Math.round(n * 1e5) / 1e5;
+    const c = map.getCenter();
+    const payload = {
+      r: originalRing.map(([x, y]) => [r5(x), r5(y)]),
+      l: shapeLabel ?? "",
+      c: [r5(overlayCenter[0]), r5(overlayCenter[1])],
+      o: Math.round(overlayRotation),
+      p: comparePlace ?? "",
+      v: [r5(c.lng), r5(c.lat), Math.round(map.getZoom() * 100) / 100],
+    };
+    const url = `${window.location.origin}${window.location.pathname}#s=${encodeShare(payload)}`;
+    const name = shapeLabel || "My shape";
+    const where = comparePlace ? ` compared to ${comparePlace}` : " in a new place";
+    const text = `${name} (${area})${where} — see it on Shape Swap`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Shape Swap", text, url });
+        return;
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    }
+    try {
+      await navigator.clipboard.writeText(`${text}\n${url}`);
+      setShareNotice("Link copied — paste it anywhere to share this comparison.");
+    } catch {
+      setShareNotice(url);
+    }
+  }, [originalRing, overlayCenter, overlayRotation, shapeLabel, comparePlace, area]);
 
   // Every new locked shape without a comparison: show the "search next" hint and focus search.
   useEffect(() => {
@@ -1251,11 +1376,35 @@ export function ShapeSwapMap() {
             </span>
           )}
           {shapeLabel && (
-            <span className="inline-flex max-w-[70vw] items-center gap-1.5 truncate rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
+            <span className="inline-flex max-w-[70vw] items-center gap-1.5 rounded-full bg-background/85 backdrop-blur px-2.5 py-1 text-xs shadow ring-1 ring-black/10">
               <span aria-hidden>🏷️</span>
               <span className="truncate">{shapeLabel}</span>
+              {shapeInfo && (
+                <button
+                  onClick={openShapeInfo}
+                  aria-label="About this shape"
+                  className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:text-foreground"
+                >
+                  <Info size={14} />
+                </button>
+              )}
             </span>
           )}
+        </div>
+      )}
+      {(shareNotice || sharedBanner) && (
+        <div className="relative z-10 mx-3 mt-2 flex items-center gap-2 rounded-xl bg-cyan-600 px-3 py-2 text-xs text-white shadow-lg">
+          <span className="flex-1">{shareNotice ?? sharedBanner}</span>
+          <button
+            onClick={() => {
+              setShareNotice(null);
+              setSharedBanner(null);
+            }}
+            aria-label="Dismiss"
+            className="opacity-80"
+          >
+            ✕
+          </button>
         </div>
       )}
 
@@ -1398,6 +1547,14 @@ export function ShapeSwapMap() {
                   </button>
                 )}
 
+                {overlayCenter && (
+                  <button
+                    onClick={shareComparison}
+                    className="flex-1 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-3 text-sm inline-flex items-center justify-center gap-1.5"
+                  >
+                    <Share2 size={14} /> Share
+                  </button>
+                )}
                 <button
                   onClick={clearAll}
                   className="flex-1 rounded-xl bg-destructive/90 hover:bg-destructive text-white font-medium py-3 text-sm"
@@ -1416,7 +1573,14 @@ export function ShapeSwapMap() {
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold">Draw with AI</h2>
               <button
-                onClick={() => !aiLoading && setAiOpen(false)}
+                onClick={() => {
+                  if (aiLoading) return;
+                  setAiOpen(false);
+                  if (aiViewOnly) {
+                    setAiViewOnly(false);
+                    setPendingShape(null);
+                  }
+                }}
                 className="text-muted-foreground text-lg leading-none px-2"
                 aria-label="Close"
               >
@@ -1480,17 +1644,25 @@ export function ShapeSwapMap() {
                 </p>
                 <div className="flex gap-2 pt-1">
                   <button
-                    onClick={() => setPendingShape(null)}
+                    onClick={() => {
+                      setPendingShape(null);
+                      if (aiViewOnly) {
+                        setAiViewOnly(false);
+                        setAiOpen(false);
+                      }
+                    }}
                     className="flex-1 rounded-xl bg-secondary text-secondary-foreground font-medium py-3 text-sm"
                   >
-                    Back
+                    {aiViewOnly ? "Close" : "Back"}
                   </button>
-                  <button
-                    onClick={applyPendingShape}
-                    className="flex-[1.4] rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-medium py-3 text-sm"
-                  >
-                    Draw on map
-                  </button>
+                  {!aiViewOnly && (
+                    <button
+                      onClick={applyPendingShape}
+                      className="flex-[1.4] rounded-xl bg-fuchsia-600 hover:bg-fuchsia-700 text-white font-medium py-3 text-sm"
+                    >
+                      Draw on map
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
